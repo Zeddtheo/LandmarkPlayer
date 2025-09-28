@@ -1,6 +1,6 @@
 ﻿import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
 // ---- 全局对象（小而清晰） ----
 let scene, camera, renderer, controls;
@@ -17,7 +17,6 @@ const dragState = { mesh: null, label: null, landmark: null };
 // ---- 启动：创建三维场景 ----
 init();
 bindUI();
-autoLoadDefaultFiles();
 
 function init() {
   console.log('初始化3D场景...');
@@ -58,6 +57,11 @@ function init() {
   window.addEventListener('resize', onResize);
   animate();
   console.log('3D场景初始化完成');
+  
+  // 在场景初始化完成后再加载默认文件
+  setTimeout(() => {
+    autoLoadDefaultFiles();
+  }, 500);
 }
 
 function animate() {
@@ -562,7 +566,10 @@ async function loadDemoCase(caseId = '1_L') {
   }
 }
 // ---- 自动加载默认文件 ----
-async function autoLoadDefaultFiles() {\r\n  try {\r\n    console.log('尝试自动加载默认文件...');\r\n    await loadDemoCase('1_L');
+async function autoLoadDefaultFiles() {
+  try {
+    console.log('尝试自动加载默认文件...');
+    await loadDemoCase('1_L');
   } catch (error) {
     console.error('自动加载文件失败:', error);
     console.log('请手动使用文件选择器加载STL和JSON文件');
