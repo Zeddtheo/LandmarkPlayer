@@ -1,0 +1,63 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Landmark Player</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    html,body{height:100%;margin:0;background:#111;color:#ddd;font:14px/1.4 'Microsoft YaHei','微软雅黑','Microsoft YaHei UI',sans-serif}
+    #toolbar{position:fixed;top:8px;right:8px;display:flex;flex-wrap:wrap;gap:8px;z-index:10;justify-content:flex-end}
+    #viewer{position:absolute;inset:0}
+    button{background:#1f2937;color:#eee;border:1px solid #334155;border-radius:6px;padding:6px 14px;cursor:pointer;display:flex;align-items:center;justify-content:center;font:600 14px/1 'Microsoft YaHei','微软雅黑','Microsoft YaHei UI',sans-serif}
+    input[type=file]{display:none}
+    label.btn{background:#1f2937;border:1px solid #334155;border-radius:6px;padding:6px 14px;cursor:pointer;display:flex;align-items:center;justify-content:center;font:600 14px/1 'Microsoft YaHei','微软雅黑','Microsoft YaHei UI',sans-serif}
+    #toolbar .control{background:#1f2937;border:1px solid #334155;border-radius:6px;padding:6px 12px;color:#eee;display:flex;align-items:center;gap:8px;font:600 14px/1 'Microsoft YaHei','微软雅黑','Microsoft YaHei UI',sans-serif}
+    #toolbar .control span{white-space:nowrap}
+    #point-size,#label-size{width:140px}
+    #point-size-value,#label-size-value{min-width:3ch;text-align:right}
+    input[type=color]{width:42px;height:28px;padding:0;border:none;border-radius:4px;cursor:pointer;background:transparent}
+  </style>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <div id="toolbar">
+    <label class="btn">
+      打开STL<input id="open-stl" type="file" accept=".stl">
+    </label>
+    <label class="btn">
+      打开JSON<input id="open-json" type="file" accept=".json">
+    </label>
+    <button id="save-json">保存JSON</button>
+    <div class="control">
+      <span>点颜色</span>
+      <input id="point-color" type="color" value="#1e90ff" />
+    </div>
+    <div class="control">
+      <span>点大小</span>
+      <input id="point-size" type="range" min="0.2" max="3" step="0.1" value="1" />
+      <span id="point-size-value">1.0</span>
+    </div>
+    <div class="control">
+      <span>文字大小</span>
+      <input id="label-size" type="range" min="0.5" max="2.5" step="0.1" value="1" />
+      <span id="label-size-value">1.0</span>
+    </div>
+    <button id="clear-stl">清除STL</button>
+    <button id="clear-json">清除JSON</button>
+  </div>
+  <div id="viewer"></div>
+
+  <!-- Import map 绑定 CDN 上的 three 生态 -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
+        "three/examples/jsm/": "https://unpkg.com/three@0.159.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <!-- 用 ES Module 入口运行 app.js -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

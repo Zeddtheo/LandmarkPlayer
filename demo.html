@@ -1,0 +1,605 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>3D牙弓标记演示</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --font-ui: 'Microsoft YaHei','微软雅黑','Microsoft YaHei UI',system-ui,sans-serif;
+    }
+    html,body{height:100%;margin:0;background:#0f172a;color:#e2e8f0;font:14px/1.5 var(--font-ui)}
+    #viewer{position:absolute;inset:0}
+    #toolbar{position:fixed;top:12px;right:12px;display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;z-index:20}
+    button{background:#1f2937;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:8px 16px;cursor:pointer;display:flex;align-items:center;justify-content:center;font:600 14px/1 var(--font-ui);transition:all .2s ease}
+    button:hover{background:#374151;transform:translateY(-1px)}
+    label.btn{background:#1f2937;border:1px solid #334155;border-radius:6px;padding:8px 16px;cursor:pointer;display:flex;align-items:center;justify-content:center;font:600 14px/1 var(--font-ui);transition:all .2s ease}
+    label.btn:hover{background:#374151;transform:translateY(-1px)}
+    input[type=file]{display:none}
+    #toolbar .control{background:#1f2937;border:1px solid #334155;border-radius:6px;padding:8px 14px;display:flex;align-items:center;gap:10px;font:600 14px/1 var(--font-ui)}
+    #toolbar .control span{white-space:nowrap}
+    #point-size,#label-size{width:120px}
+    #point-size-value,#label-size-value{min-width:3ch;text-align:right}
+    input[type=color]{width:44px;height:30px;padding:0;border:none;border-radius:4px;cursor:pointer;background:transparent}
+    #demo-info{position:fixed;top:12px;left:12px;max-width:320px;padding:18px 20px;background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.25);border-radius:10px;box-shadow:0 10px 30px rgba(15,23,42,.35);backdrop-filter:blur(12px);z-index:25}
+    #demo-info h2{margin:0 0 10px;font-size:16px;color:#60a5fa;display:flex;align-items:center;gap:6px}
+    #demo-info p{margin:4px 0;font-size:13px;color:#cbd5f5}
+    #demo-info button.close{position:absolute;top:10px;right:12px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:18px;line-height:1;padding:0;width:20px;height:20px}
+    #demo-info button.close:hover{color:#e2e8f0}
+  </style>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <div id="demo-info">
+    <button class="close" title="隐藏提示">×</button>
+    <h2>🦷 3D牙弓标记演示</h2>
+    <p><strong>演示数据：</strong> 下颌 (1_L) / 上颌 (1_U)；点击按钮即可切换。</p>
+    <p><strong>操作技巧：</strong> 左键旋转 · 右键平移 · 滚轮缩放 · 拖动蓝色点移动 · 双击点可重命名。</p>
+    <p><strong>体验建议：</strong> 改改“点颜色 / 点大小 / 文字大小”，或导出当前标记 JSON 试试看！</p>
+  </div>
+
+  <div id="toolbar">
+    <button id="demo-load-l">🔽 下颌演示</button>
+    <button id="demo-load-u">🔼 上颌演示</button>
+    <label class="btn">📂 打开STL<input id="open-stl" type="file" accept=".stl"></label>
+    <label class="btn">📝 打开JSON<input id="open-json" type="file" accept=".json"></label>
+    <button id="save-json">💾 保存JSON</button>
+    <div class="control">
+      <span>点颜色</span>
+      <input id="point-color" type="color" value="#1e90ff" />
+    </div>
+    <div class="control">
+      <span>点大小</span>
+      <input id="point-size" type="range" min="0.2" max="3" step="0.1" value="1" />
+      <span id="point-size-value">1.0</span>
+    </div>
+    <div class="control">
+      <span>文字大小</span>
+      <input id="label-size" type="range" min="0.5" max="2.5" step="0.1" value="1" />
+      <span id="label-size-value">1.0</span>
+    </div>
+    <button id="clear-stl">🗑 清除STL</button>
+    <button id="clear-json">🗑 清除JSON</button>
+  </div>
+  <div id="viewer"></div>
+
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.159.0/examples/jsm/controls/OrbitControls.js';
+    import { STLLoader } from 'https://unpkg.com/three@0.159.0/examples/jsm/loaders/STLLoader.js';
+
+    let scene, camera, renderer, controls;
+    let stlMesh = null;
+    let landmarkMeshes = [];
+    let landmarkLabels = [];
+    let landmarks = [];
+    const state = { units: 'mm', coord_space: 'model', pointSizeMultiplier: 1, labelSizeMultiplier: 1, pointColor: '#1e90ff' };
+
+    const pointer = new THREE.Vector2();
+    const raycaster = new THREE.Raycaster();
+    const dragState = { mesh: null, label: null, landmark: null };
+
+    init();
+    bindUI();
+    autoLoadDefaultFiles();
+
+    function init() {
+      const el = document.getElementById('viewer');
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x222222);
+
+      const w = el.clientWidth || window.innerWidth;
+      const h = el.clientHeight || window.innerHeight;
+
+      camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 10000);
+      camera.position.set(0, 50, 100);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(w, h);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      el.appendChild(renderer.domElement);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+      const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+      dir.position.set(100, 200, 100);
+      dir.castShadow = true;
+      scene.add(dir);
+
+      const axes = new THREE.AxesHelper(50);
+      scene.add(axes);
+
+      setupInteractionHandlers();
+      window.addEventListener('resize', onResize);
+      animate();
+    }
+
+    function bindUI() {
+      const pointSizeRange = document.getElementById('point-size');
+      const pointSizeValue = document.getElementById('point-size-value');
+      const labelSizeRange = document.getElementById('label-size');
+      const labelSizeValue = document.getElementById('label-size-value');
+      const colorInput = document.getElementById('point-color');
+      const clearStlButton = document.getElementById('clear-stl');
+      const clearJsonButton = document.getElementById('clear-json');
+      const loadLowerButton = document.getElementById('demo-load-l');
+      const loadUpperButton = document.getElementById('demo-load-u');
+
+      const runDemoCase = async (caseId) => {
+        try {
+          const result = await loadDemoCase(caseId);
+          const hasJson = result?.jsonLoaded !== false;
+          console.log(`🎯 ${caseId}: ${hasJson ? '模型与标记已加载完成' : '模型加载完成，未找到对应JSON'}`);
+        } catch (error) {
+          console.error(`❌ 演示数据 ${caseId} 加载失败`, error);
+          alert(`加载演示数据失败：${caseId}`);
+        }
+      };
+
+      loadLowerButton?.addEventListener('click', () => runDemoCase('1_L'));
+      loadUpperButton?.addEventListener('click', () => runDemoCase('1_U'));
+
+      if (pointSizeRange && pointSizeValue) {
+        const updatePointSize = (value) => {
+          const numeric = Number(value) || 1;
+          state.pointSizeMultiplier = numeric;
+          pointSizeValue.textContent = numeric.toFixed(1);
+          if (landmarks.length && stlMesh) renderLandmarkSpheres();
+        };
+        pointSizeRange.value = String(state.pointSizeMultiplier);
+        updatePointSize(pointSizeRange.value || 1);
+        pointSizeRange.addEventListener('input', (e) => updatePointSize(e.target.value));
+      }
+
+      if (labelSizeRange && labelSizeValue) {
+        const updateLabelSize = (value) => {
+          const numeric = Number(value) || 1;
+          state.labelSizeMultiplier = numeric;
+          labelSizeValue.textContent = numeric.toFixed(1);
+          if (landmarks.length && stlMesh) renderLandmarkSpheres();
+        };
+        labelSizeRange.value = String(state.labelSizeMultiplier);
+        updateLabelSize(labelSizeRange.value || 1);
+        labelSizeRange.addEventListener('input', (e) => updateLabelSize(e.target.value));
+      }
+
+      if (colorInput) {
+        colorInput.value = state.pointColor;
+        colorInput.addEventListener('input', (e) => {
+          const value = e.target.value;
+          if (!value) return;
+          state.pointColor = value;
+          if (landmarks.length && stlMesh) renderLandmarkSpheres();
+        });
+      }
+
+      clearStlButton?.addEventListener('click', () => {
+        clearMeshAndLandmarks();
+        console.log('🗑️ STL已清除');
+      });
+
+      clearJsonButton?.addEventListener('click', () => {
+        resetDragState();
+        landmarks.length = 0;
+        clearLandmarkMeshes();
+        clearLandmarkLabels();
+        console.log('🗑️ 标记点已清除');
+      });
+
+      document.getElementById('open-stl')?.addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+          const buffer = await file.arrayBuffer();
+          await loadSTLFromArrayBuffer(buffer);
+          console.log('✅ STL文件加载成功');
+        } catch (error) {
+          console.error('❌ STL加载失败:', error);
+          alert('STL文件加载失败，请检查文件格式');
+        }
+      });
+
+      document.getElementById('open-json')?.addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const json = JSON.parse(text);
+          loadLandmarksJSON(json);
+          console.log('✅ JSON文件加载成功');
+        } catch (error) {
+          console.error('❌ JSON解析失败:', error);
+          alert('JSON文件格式错误，请检查文件内容');
+        }
+      });
+
+      document.getElementById('save-json')?.addEventListener('click', () => {
+        const json = exportLandmarksJSON();
+        const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `landmarks_${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+
+      const infoPanel = document.getElementById('demo-info');
+      infoPanel?.querySelector('.close')?.addEventListener('click', () => {
+        infoPanel.style.display = 'none';
+      });
+    }
+
+    async function loadSTLFromArrayBuffer(buffer) {
+      clearMeshAndLandmarks();
+      const loader = new STLLoader();
+      const geometry = loader.parse(buffer);
+      geometry.computeBoundingBox();
+      geometry.computeVertexNormals();
+
+      const material = new THREE.MeshStandardMaterial({
+        color: 0x9aa6b2,
+        metalness: 0.1,
+        roughness: 0.7
+      });
+
+      stlMesh = new THREE.Mesh(geometry, material);
+      stlMesh.castShadow = true;
+      stlMesh.receiveShadow = true;
+      scene.add(stlMesh);
+      stlMesh.updateMatrixWorld(true);
+
+      fitCameraToObject(stlMesh);
+      if (landmarks.length) renderLandmarkSpheres();
+    }
+
+    function loadLandmarksJSON(json) {
+      let landmarkData = [];
+
+      if (json.landmarks && Array.isArray(json.landmarks)) {
+        landmarkData = json.landmarks;
+        state.coord_space = json.coord_space || 'model';
+        state.units = json.units || 'mm';
+      } else if (json.markups && Array.isArray(json.markups) && json.markups.length > 0) {
+        const markup = json.markups[0];
+        if (markup.controlPoints && Array.isArray(markup.controlPoints)) {
+          landmarkData = markup.controlPoints.map(cp => ({
+            id: cp.id,
+            name: cp.label || cp.id,
+            position: cp.position
+          }));
+          state.coord_space = markup.coordinateSystem === 'LPS' ? 'model' : 'model';
+          state.units = markup.coordinateUnits || 'mm';
+        }
+      } else {
+        console.warn('无效的JSON标记格式');
+        return;
+      }
+
+      landmarks = landmarkData
+        .filter(it => Array.isArray(it.position) && it.position.length === 3)
+        .map(it => ({
+          id: it.id || it.name || cryptoRandomId(),
+          name: it.name || it.id || 'lm',
+          position_model: new THREE.Vector3(it.position[0], it.position[1], it.position[2])
+        }));
+
+      if (stlMesh) renderLandmarkSpheres();
+    }
+
+    function renderLandmarkSpheres() {
+      resetDragState();
+      clearLandmarkMeshes();
+      clearLandmarkLabels();
+
+      if (!stlMesh) {
+        console.warn('没有STL网格，无法渲染标记');
+        return;
+      }
+
+      const box = new THREE.Box3().setFromObject(stlMesh);
+      const size = box.getSize(new THREE.Vector3());
+      const baseRadius = size.length() * 0.01 || 2;
+      const labelBase = Math.max(baseRadius, 0.1);
+      const pointScale = state.pointSizeMultiplier || 1;
+      const labelScale = Math.max(state.labelSizeMultiplier || 1, 0.2);
+      const sphereRadius = Math.max(labelBase * pointScale, 0.1);
+      const color = new THREE.Color(state.pointColor || '#1e90ff');
+
+      landmarks.forEach(lm => {
+        const worldPos = modelToWorld(lm.position_model);
+        const geometry = new THREE.SphereGeometry(sphereRadius, 16, 12);
+        const material = new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.4 });
+        const sphere = new THREE.Mesh(geometry, material);
+        sphere.position.copy(worldPos);
+        sphere.userData.landmarkId = lm.id;
+        sphere.userData.radius = sphereRadius;
+        sphere.castShadow = true;
+        landmarkMeshes.push(sphere);
+        scene.add(sphere);
+
+        const label = createLabelSprite(lm.name || lm.id, labelBase, labelScale);
+        label.position.copy(worldPos);
+        label.position.y += sphereRadius + labelBase * labelScale;
+        label.userData.landmarkId = lm.id;
+        label.userData.radius = sphereRadius;
+        label.userData.labelScale = labelScale;
+        label.userData.baseRadius = labelBase;
+        landmarkLabels.push(label);
+        scene.add(label);
+      });
+    }
+
+    function exportLandmarksJSON() {
+      return {
+        coord_space: 'model',
+        units: state.units || 'mm',
+        landmarks: landmarks.map(lm => ({
+          id: lm.id,
+          name: lm.name,
+          position: [lm.position_model.x, lm.position_model.y, lm.position_model.z]
+        }))
+      };
+    }
+
+    function fitCameraToObject(obj) {
+      const box = new THREE.Box3().setFromObject(obj);
+      const size = box.getSize(new THREE.Vector3()).length();
+      const center = box.getCenter(new THREE.Vector3());
+
+      controls.target.copy(center);
+      camera.position.copy(center.clone().add(new THREE.Vector3(size * 0.5, size * 0.5, size * 1.2)));
+      camera.near = size / 1000;
+      camera.far = size * 10;
+      camera.updateProjectionMatrix();
+      controls.update();
+    }
+
+    function modelToWorld(v3) {
+      if (!stlMesh) return v3.clone();
+      return v3.clone().applyMatrix4(stlMesh.matrixWorld);
+    }
+
+    function worldToModel(v3) {
+      if (!stlMesh) return v3.clone();
+      const inv = new THREE.Matrix4().copy(stlMesh.matrixWorld).invert();
+      return v3.clone().applyMatrix4(inv);
+    }
+
+    function clearMeshAndLandmarks() {
+      resetDragState();
+      if (stlMesh) {
+        scene.remove(stlMesh);
+        stlMesh.geometry.dispose();
+        stlMesh.material.dispose();
+        stlMesh = null;
+      }
+      clearLandmarkMeshes();
+      clearLandmarkLabels();
+    }
+
+    function clearLandmarkMeshes() {
+      for (const mesh of landmarkMeshes) {
+        scene.remove(mesh);
+        mesh.geometry.dispose();
+        mesh.material.dispose();
+      }
+      landmarkMeshes.length = 0;
+    }
+
+    function clearLandmarkLabels() {
+      for (const label of landmarkLabels) {
+        scene.remove(label);
+        if (label.material.map) label.material.map.dispose();
+        label.material.dispose();
+      }
+      landmarkLabels.length = 0;
+    }
+
+    function createLabelSprite(text, baseRadius, labelScale = 1) {
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      const fontSize = 64;
+      const padding = 24;
+
+      context.font = `${fontSize}px "Segoe UI", sans-serif`;
+      const metrics = context.measureText(text);
+      canvas.width = Math.ceil(metrics.width + padding * 2);
+      canvas.height = Math.ceil(fontSize + padding * 2);
+
+      context.font = `${fontSize}px "Segoe UI", sans-serif`;
+      context.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = '#ffffff';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(text, canvas.width / 2, canvas.height / 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+
+      const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+      const sprite = new THREE.Sprite(material);
+      const scaleMultiplier = Math.max(labelScale, 0.2);
+      const reference = Math.max(baseRadius, 0.1);
+      const scale = reference * 3.5 * scaleMultiplier;
+      const aspect = canvas.height / canvas.width;
+      sprite.scale.set(scale, scale * aspect, 1);
+      sprite.renderOrder = 10;
+      return sprite;
+    }
+
+    function setupInteractionHandlers() {
+      if (!renderer || !renderer.domElement) return;
+      if (setupInteractionHandlers._initialized) return;
+      setupInteractionHandlers._initialized = true;
+
+      const canvas = renderer.domElement;
+      canvas.addEventListener('pointerdown', handlePointerDown);
+      canvas.addEventListener('pointermove', handlePointerMove);
+      canvas.addEventListener('dblclick', handleDoubleClick);
+      canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+      window.addEventListener('pointerup', handlePointerUp);
+    }
+
+    function handlePointerDown(event) {
+      if (event.button !== 0 || event.detail > 1) return;
+      if (!renderer || !stlMesh || !landmarkMeshes.length) return;
+
+      updatePointerFromEvent(event);
+      const hit = pickLandmarkMesh();
+      if (!hit) return;
+
+      const id = hit.object.userData.landmarkId;
+      dragState.mesh = hit.object;
+      dragState.label = findLabelById(id);
+      dragState.landmark = findLandmarkById(id);
+
+      controls.enabled = false;
+      renderer.domElement.style.cursor = 'grabbing';
+      event.target.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    }
+
+    function handlePointerMove(event) {
+      if (!dragState.mesh || !stlMesh) return;
+
+      updatePointerFromEvent(event);
+      raycaster.setFromCamera(pointer, camera);
+      const intersection = raycaster.intersectObject(stlMesh, true)[0];
+      if (!intersection) return;
+
+      dragState.mesh.position.copy(intersection.point);
+      dragState.mesh.updateMatrixWorld();
+
+      const sphereRadius = dragState.mesh.userData.radius || 1;
+      const labelScale = dragState.label?.userData?.labelScale || 1;
+      const labelBase = dragState.label?.userData?.baseRadius || Math.max(sphereRadius, 0.1);
+      if (dragState.label) {
+        dragState.label.position.copy(intersection.point);
+        dragState.label.position.y += sphereRadius + labelBase * labelScale;
+      }
+
+      if (dragState.landmark && dragState.landmark.position_model) {
+        dragState.landmark.position_model.copy(worldToModel(intersection.point));
+      }
+
+      event.preventDefault();
+    }
+
+    function handlePointerUp(event) {
+      if (!dragState.mesh) return;
+      renderer?.domElement?.releasePointerCapture?.(event.pointerId);
+      resetDragState();
+      event.preventDefault();
+    }
+
+    function handleDoubleClick(event) {
+      updatePointerFromEvent(event);
+      const hit = pickLandmarkMesh();
+      if (!hit) return;
+
+      const target = findLandmarkById(hit.object.userData.landmarkId);
+      if (!target) return;
+
+      event.preventDefault();
+      const nextName = window.prompt('输入新的点名称', target.name || target.id);
+      if (nextName == null) return;
+
+      const trimmed = nextName.trim();
+      if (!trimmed || trimmed === target.name) return;
+
+      target.name = trimmed;
+      renderLandmarkSpheres();
+    }
+
+    function updatePointerFromEvent(event) {
+      if (!renderer || !renderer.domElement) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    }
+
+    function pickLandmarkMesh() {
+      if (!landmarkMeshes.length) return null;
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(landmarkMeshes, false);
+      return hits.length ? hits[0] : null;
+    }
+
+    function findLabelById(id) {
+      return landmarkLabels.find(label => label.userData.landmarkId === id) || null;
+    }
+
+    function findLandmarkById(id) {
+      return landmarks.find(lm => lm.id === id) || null;
+    }
+
+    function resetDragState() {
+      if (!dragState.mesh && !dragState.label && !dragState.landmark) return;
+      dragState.mesh = null;
+      dragState.label = null;
+      dragState.landmark = null;
+      if (controls) controls.enabled = true;
+      if (renderer && renderer.domElement) renderer.domElement.style.cursor = 'default';
+    }
+
+    function onResize() {
+      const el = document.getElementById('viewer');
+      const width = el.clientWidth || window.innerWidth;
+      const height = el.clientHeight || window.innerHeight;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    async function loadDemoCase(caseId = '1_L') {
+      const stlUrl = `assets/${caseId}.stl`;
+      const jsonUrl = `assets/${caseId}.json`;
+
+      const stlResponse = await fetch(stlUrl);
+      if (!stlResponse.ok) {
+        throw new Error(`无法获取演示 STL: ${stlUrl} (${stlResponse.status})`);
+      }
+      const stlBuffer = await stlResponse.arrayBuffer();
+      await loadSTLFromArrayBuffer(stlBuffer);
+
+      const jsonResponse = await fetch(jsonUrl);
+      if (!jsonResponse.ok) {
+        console.warn(`未找到演示 JSON: ${jsonUrl}`);
+        return { stlLoaded: true, jsonLoaded: false };
+      }
+      const jsonText = await jsonResponse.text();
+      const json = JSON.parse(jsonText);
+      loadLandmarksJSON(json);
+      return { stlLoaded: true, jsonLoaded: true };
+    }
+
+    async function autoLoadDefaultFiles() {
+      try {
+        console.log('尝试自动加载默认文件...');
+        await loadDemoCase('1_L');
+      } catch (error) {
+        console.error('自动加载文件失败:', error);
+        console.log('请手动使用文件选择器加载STL和JSON文件');
+      }
+    }
+
+    function cryptoRandomId() {
+      return (crypto?.randomUUID?.() || ('lm_' + Math.random().toString(36).slice(2, 10)));
+    }
+  </script>
+</body>
+</html>
