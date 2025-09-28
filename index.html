@@ -16,10 +16,26 @@
     #point-size,#label-size{width:140px}
     #point-size-value,#label-size-value{min-width:3ch;text-align:right}
     input[type=color]{width:42px;height:28px;padding:0;border:none;border-radius:4px;cursor:pointer;background:transparent}
+    #guide-panel{position:fixed;top:12px;left:12px;max-width:320px;padding:18px 20px;background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.25);border-radius:10px;box-shadow:0 10px 30px rgba(15,23,42,.35);backdrop-filter:blur(12px);z-index:15;font:13px/1.5 'Microsoft YaHei','微软雅黑','Microsoft YaHei UI',sans-serif}
+    #guide-panel h2{margin:0 0 10px;font-size:16px;color:#60a5fa;display:flex;align-items:center;gap:6px}
+    #guide-panel ul{margin:0;padding-left:18px;color:#cbd5f5}
+    #guide-panel li{margin:0 0 6px 0}
+    #guide-panel .guide-close{position:absolute;top:10px;right:12px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:18px;line-height:1;padding:0;width:20px;height:20px}
+    #guide-panel .guide-close:hover{color:#e2e8f0}
   </style>
   <link rel="icon" href="data:,">
 </head>
 <body>
+  <div id="guide-panel">
+    <button class="guide-close" title="隐藏操作指南">×</button>
+    <h2>🦷 操作指南</h2>
+    <ul>
+      <li><strong>加载数据：</strong> 点击上方“打开STL / 打开JSON”选择模型与标记文件。</li>
+      <li><strong>视角控制：</strong> 鼠标左键旋转，右键平移，滚轮缩放。</li>
+      <li><strong>标记编辑：</strong> 拖动蓝色点调整位置，双击可以重命名；可通过滑杆调整点与文字大小、颜色。</li>
+      <li><strong>保存结果：</strong> “保存JSON” 会导出当前标记数据；如需清空可使用“清除STL / 清除JSON”。</li>
+    </ul>
+  </div>
   <div id="toolbar">
     <label class="btn">
       打开STL<input id="open-stl" type="file" accept=".stl">
@@ -59,5 +75,15 @@
 
   <!-- 用 ES Module 入口运行 app.js -->
   <script type="module" src="js/app.js"></script>
+  <script>
+    document.querySelector('#guide-panel .guide-close')?.addEventListener('click', () => {
+      document.getElementById('guide-panel').style.display = 'none';
+    });
+  </script>
 </body>
 </html>
+
+
+
+
+

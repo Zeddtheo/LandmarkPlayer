@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>3D牙弓标记点查看器 - 演示版</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    html,body{height:100%;margin:0;background:#111;color:#ddd;font:14px/1.4 'Microsoft YaHei','微软雅黑',sans-serif}
+    #toolbar{position:fixed;top:8px;right:8px;display:flex;flex-wrap:wrap;gap:8px;z-index:10;justify-content:flex-end}
+    #viewer{position:absolute;inset:0}
+    button{background:#1f2937;color:#eee;border:1px solid #334155;border-radius:6px;padding:6px 14px;cursor:pointer;font:600 14px/1 'Microsoft YaHei','微软雅黑',sans-serif;transition:all 0.2s ease}
+    button:hover{background:#374151;transform:translateY(-1px)}
+    input[type=file]{display:none}
+    label.btn{background:#1f2937;border:1px solid #334155;border-radius:6px;padding:6px 14px;cursor:pointer;font:600 14px/1 'Microsoft YaHei','微软雅黑',sans-serif;transition:all 0.2s ease}
+    label.btn:hover{background:#374151;transform:translateY(-1px)}
+    #toolbar .control{background:#1f2937;border:1px solid #334155;border-radius:6px;padding:6px 12px;color:#eee;display:flex;align-items:center;gap:8px;font:600 14px/1 'Microsoft YaHei','微软雅黑',sans-serif}
+    #toolbar .control span{white-space:nowrap}
+    input[type=range]{width:100px}
+    input[type=color]{width:42px;height:28px;padding:0;border:none;border-radius:4px;cursor:pointer}
+    #status{position:fixed;bottom:10px;left:10px;background:rgba(0,0,0,0.9);color:#60a5fa;padding:8px 12px;border-radius:4px;font-size:12px;z-index:10;backdrop-filter:blur(10px);border:1px solid #334155}
+    #demo-info{position:fixed;top:8px;left:8px;background:rgba(0,0,0,0.9);padding:16px;border-radius:8px;max-width:280px;font-size:12px;line-height:1.4;z-index:10;backdrop-filter:blur(10px);border:1px solid #334155}
+    #demo-info h3{margin:0 0 8px 0;color:#60a5fa;font-size:14px}
+    #demo-info p{margin:4px 0;color:#d1d5db}
+    #demo-info .close-btn{position:absolute;top:8px;right:8px;background:none;border:none;color:#9ca3af;cursor:pointer;font-size:16px;padding:0;width:20px;height:20px}
+  </style>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <!-- 演示说明 -->
+  <div id="demo-info">
+    <button class="close-btn" onclick="document.getElementById('demo-info').style.display='none'">×</button>
+    <h3>🦷 3D牙弓标记点查看器</h3>
+    <p><strong>演示功能：</strong></p>
+    <p>• 自动显示内置3D牙弓模型</p>
+    <p>• 14个预设牙齿标记点</p>
+    <p>• 鼠标左键拖拽旋转视角</p>
+    <p>• 滚轮缩放，右键平移</p>
+    <p>• 点击红色标记点可拖拽移动</p>
+    <p><strong>文件功能：</strong></p>
+    <p>• 支持加载自定义STL和JSON文件</p>
+    <p>• 可调整标记点大小和颜色</p>
+    <p>• 支持导出编辑后的标记点数据</p>
+  </div>
+
+  <div id="status">正在初始化3D场景...</div>
+
+  <div id="toolbar">
+    <label class="btn">
+      📂 加载STL<input id="open-stl" type="file" accept=".stl">
+    </label>
+    <label class="btn">
+      📝 加载JSON<input id="open-json" type="file" accept=".json">
+    </label>
+    <button id="export-json">💾 导出JSON</button>
+    <div class="control">
+      <span>颜色:</span>
+      <input id="point-color" type="color" value="#ff4444">
+    </div>
+    <div class="control">
+      <span>大小:</span>
+      <input id="point-size" type="range" min="0.5" max="3" step="0.1" value="1">
+      <span id="point-size-value">1.0</span>
+    </div>
+    <button id="reset-demo">🔄 重置演示</button>
+  </div>
+
+  <div id="viewer"></div>
+
+  <!-- 使用稳定的Three.js版本 -->
+  <script src="https://unpkg.com/three@r155/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@r155/examples/js/controls/OrbitControls.js"></script>
+
+  <!-- 内联STL加载器 -->
+  <script>
+    // 简化的STL加载器
+    THREE.STLLoader = function() {};
+    
+    THREE.STLLoader.prototype = {
+      parse: function(arrayBuffer) {
+        function isBinary(data) {
+          const reader = new DataView(data);
+          const numTriangles = reader.getUint32(80, true);
+          const expectedLength = 80 + 4 + numTriangles * (4 * 3 * 4 + 2);
+          return expectedLength === data.byteLength;
+        }
+        
+        function parseBinary(data) {
+          const reader = new DataView(data);
+          const numTriangles = reader.getUint32(80, true);
+          
+          const vertices = [];
+          const normals = [];
+          let offset = 84;
+          
+          for (let i = 0; i < numTriangles; i++) {
+            // 法向量
+            const nx = reader.getFloat32(offset, true);
+            const ny = reader.getFloat32(offset + 4, true);
+            const nz = reader.getFloat32(offset + 8, true);
+            offset += 12;
+            
+            // 三个顶点
+            for (let j = 0; j < 3; j++) {
+              const vx = reader.getFloat32(offset, true);
+              const vy = reader.getFloat32(offset + 4, true);
+              const vz = reader.getFloat32(offset + 8, true);
+              offset += 12;
+              
+              vertices.push(vx, vy, vz);
+              normals.push(nx, ny, nz);
+            }
+            
+            offset += 2; // 跳过属性字节
+          }
+          
+          const geometry = new THREE.BufferGeometry();
+          geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+          geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+          
+          return geometry;
+        }
+        
+        function parseASCII(data) {
+          const text = new TextDecoder().decode(data);
+          const vertices = [];
+          const normals = [];
+          
+          const lines = text.split('\n');
+          let currentNormal = [0, 0, 0];
+          
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            
+            if (line.startsWith('facet normal')) {
+              const parts = line.split(/\s+/);
+              currentNormal = [
+                parseFloat(parts[2]),
+                parseFloat(parts[3]),
+                parseFloat(parts[4])
+              ];
+            } else if (line.startsWith('vertex')) {
+              const parts = line.split(/\s+/);
+              vertices.push(
+                parseFloat(parts[1]),
+                parseFloat(parts[2]),
+                parseFloat(parts[3])
+              );
+              normals.push(...currentNormal);
+            }
+          }
+          
+          const geometry = new THREE.BufferGeometry();
+          geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+          geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+          
+          return geometry;
+        }
+        
+        if (isBinary(arrayBuffer)) {
+          return parseBinary(arrayBuffer);
+        } else {
+          return parseASCII(arrayBuffer);
+        }
+      }
+    };
+  </script>
+
+  <script>
+    // 等待页面和脚本完全加载
+    window.addEventListener('load', function() {
+      // 检查Three.js是否加载成功
+      if (typeof THREE === 'undefined') {
+        document.getElementById('status').innerHTML = '❌ 需要网络连接加载3D引擎，请确保网络连接正常';
+        document.getElementById('viewer').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:18px;">需要网络连接才能运行</div>';
+        return;
+      }
+      
+      // 检查OrbitControls是否加载
+      if (typeof THREE.OrbitControls === 'undefined') {
+        document.getElementById('status').innerHTML = '⚠️ 控制器加载失败，部分功能可能受限';
+      }
+      
+      // 开始初始化应用
+      initApp();
+    });
+
+    function initApp() {
+      // 全局变量
+      let scene, camera, renderer, controls;
+      let stlMesh = null;
+      let landmarkMeshes = [];
+      let landmarkLabels = [];
+      let landmarks = [];
+      const state = { 
+        pointSizeMultiplier: 1, 
+        pointColor: '#ff4444' 
+      };
+
+      const pointer = new THREE.Vector2();
+      const raycaster = new THREE.Raycaster();
+      const dragState = { mesh: null, label: null, landmark: null };
+      const statusEl = document.getElementById('status');
+
+      function updateStatus(message) {
+        console.log(message);
+        statusEl.textContent = message;
+      }
+
+      // 生成内置的牙弓形状STL数据
+      function generateDemoSTLGeometry() {
+        const vertices = [];
+        const normals = [];
+        
+        // 生成一个U形牙弓
+        const segments = 40;
+        const radiusOuter = 30;
+        const radiusInner = 22;
+        const height = 8;
+        
+        for (let i = 0; i < segments; i++) {
+          const angle1 = (Math.PI * i) / segments;
+          const angle2 = (Math.PI * (i + 1)) / segments;
+          
+          const x1o = Math.cos(angle1) * radiusOuter;
+          const z1o = Math.sin(angle1) * radiusOuter;
+          const x1i = Math.cos(angle1) * radiusInner;
+          const z1i = Math.sin(angle1) * radiusInner;
+          
+          const x2o = Math.cos(angle2) * radiusOuter;
+          const z2o = Math.sin(angle2) * radiusOuter;
+          const x2i = Math.cos(angle2) * radiusInner;
+          const z2i = Math.sin(angle2) * radiusInner;
+          
+          // 顶面
+          vertices.push(x1o, height, z1o, x1i, height, z1i, x2o, height, z2o);
+          normals.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
+          
+          vertices.push(x1i, height, z1i, x2i, height, z2i, x2o, height, z2o);
+          normals.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
+          
+          // 底面
+          vertices.push(x1o, 0, z1o, x2o, 0, z2o, x1i, 0, z1i);
+          normals.push(0, -1, 0, 0, -1, 0, 0, -1, 0);
+          
+          vertices.push(x1i, 0, z1i, x2o, 0, z2o, x2i, 0, z2i);
+          normals.push(0, -1, 0, 0, -1, 0, 0, -1, 0);
+          
+          // 外侧面
+          vertices.push(x1o, 0, z1o, x1o, height, z1o, x2o, height, z2o);
+          vertices.push(x1o, 0, z1o, x2o, height, z2o, x2o, 0, z2o);
+          for (let j = 0; j < 6; j++) {
+            normals.push(Math.cos(angle1 + Math.PI/2), 0, Math.sin(angle1 + Math.PI/2));
+          }
+          
+          // 内侧面
+          vertices.push(x1i, 0, z1i, x2i, height, z2i, x1i, height, z1i);
+          vertices.push(x1i, 0, z1i, x2i, 0, z2i, x2i, height, z2i);
+          for (let j = 0; j < 6; j++) {
+            normals.push(-Math.cos(angle1 + Math.PI/2), 0, -Math.sin(angle1 + Math.PI/2));
+          }
+        }
+        
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+        geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+        
+        return geometry;
+      }
+
+      // 生成内置的landmark数据
+      function generateDemoLandmarks() {
+        return [
+          { id: "UR7", name: "右上第二磨牙", position: new THREE.Vector3(-24, 4, 6) },
+          { id: "UR6", name: "右上第一磨牙", position: new THREE.Vector3(-18, 4, 10) },
+          { id: "UR5", name: "右上第二前磨牙", position: new THREE.Vector3(-14, 4, 14) },
+          { id: "UR4", name: "右上第一前磨牙", position: new THREE.Vector3(-10, 4, 18) },
+          { id: "UR3", name: "右上尖牙", position: new THREE.Vector3(-7, 4, 21) },
+          { id: "UR2", name: "右上侧切牙", position: new THREE.Vector3(-4, 4, 24) },
+          { id: "UR1", name: "右上中切牙", position: new THREE.Vector3(-1.5, 4, 26) },
+          { id: "UL1", name: "左上中切牙", position: new THREE.Vector3(1.5, 4, 26) },
+          { id: "UL2", name: "左上侧切牙", position: new THREE.Vector3(4, 4, 24) },
+          { id: "UL3", name: "左上尖牙", position: new THREE.Vector3(7, 4, 21) },
+          { id: "UL4", name: "左上第一前磨牙", position: new THREE.Vector3(10, 4, 18) },
+          { id: "UL5", name: "左上第二前磨牙", position: new THREE.Vector3(14, 4, 14) },
+          { id: "UL6", name: "左上第一磨牙", position: new THREE.Vector3(18, 4, 10) },
+          { id: "UL7", name: "左上第二磨牙", position: new THREE.Vector3(24, 4, 6) }
+        ];
+      }
+
+      // 初始化3D场景
+      function init() {
+        try {
+          updateStatus('正在创建3D场景...');
+          
+          const viewer = document.getElementById('viewer');
+          
+          // 场景
+          scene = new THREE.Scene();
+          scene.background = new THREE.Color(0x1a1a1a);
+          
+          // 相机
+          const w = viewer.clientWidth || window.innerWidth;
+          const h = viewer.clientHeight || window.innerHeight;
+          camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
+          camera.position.set(0, 40, 80);
+          
+          // 渲染器
+          renderer = new THREE.WebGLRenderer({ antialias: true });
+          renderer.setSize(w, h);
+          renderer.setPixelRatio(window.devicePixelRatio);
+          renderer.shadowMap.enabled = true;
+          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+          viewer.appendChild(renderer.domElement);
+          
+          // 控制器（如果可用）
+          if (typeof THREE.OrbitControls !== 'undefined') {
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.1;
+            controls.target.set(0, 4, 15);
+          }
+          
+          // 灯光
+          scene.add(new THREE.AmbientLight(0x404040, 0.6));
+          const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+          directionalLight.position.set(50, 50, 30);
+          directionalLight.castShadow = true;
+          scene.add(directionalLight);
+          
+          // 添加一些额外的光源
+          const light1 = new THREE.PointLight(0xffffff, 0.3, 100);
+          light1.position.set(-30, 20, 30);
+          scene.add(light1);
+          
+          const light2 = new THREE.PointLight(0xffffff, 0.3, 100);
+          light2.position.set(30, 20, 30);
+          scene.add(light2);
+          
+          // 坐标轴
+          const axes = new THREE.AxesHelper(20);
+          axes.material.transparent = true;
+          axes.material.opacity = 0.3;
+          scene.add(axes);
+          
+          // 窗口调整
+          window.addEventListener('resize', onResize);
+          
+          // 交互处理
+          if (controls) {
+            setupInteractionHandlers();
+          }
+          
+          // 开始动画循环
+          animate();
+          
+          updateStatus('正在加载演示数据...');
+          
+          // 加载演示数据
+          loadDemoData();
+          
+        } catch (error) {
+          updateStatus('初始化失败: ' + error.message);
+          console.error('初始化错误:', error);
+        }
+      }
+
+      function loadDemoData() {
+        try {
+          // 创建演示STL模型
+          const geometry = generateDemoSTLGeometry();
+          const material = new THREE.MeshLambertMaterial({ 
+            color: 0xcccccc,
+            side: THREE.DoubleSide
+          });
+          
+          stlMesh = new THREE.Mesh(geometry, material);
+          stlMesh.castShadow = true;
+          stlMesh.receiveShadow = true;
+          scene.add(stlMesh);
+          
+          // 创建演示landmarks
+          landmarks = generateDemoLandmarks();
+          renderLandmarks();
+          
+          updateStatus('演示数据加载完成！你可以拖拽红色标记点编辑位置');
+          
+        } catch (error) {
+          updateStatus('演示数据加载失败: ' + error.message);
+          console.error('演示数据加载错误:', error);
+        }
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        if (controls) controls.update();
+        if (renderer && scene && camera) {
+          renderer.render(scene, camera);
+        }
+      }
+
+      function onResize() {
+        const viewer = document.getElementById('viewer');
+        const w = viewer.clientWidth || window.innerWidth;
+        const h = viewer.clientHeight || window.innerHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      }
+
+      function renderLandmarks() {
+        // 清除现有landmarks
+        landmarkMeshes.forEach(mesh => scene.remove(mesh));
+        landmarkLabels.forEach(label => scene.remove(label));
+        landmarkMeshes = [];
+        landmarkLabels = [];
+        
+        if (!landmarks.length) return;
+        
+        const sphereRadius = 1.5 * state.pointSizeMultiplier;
+        
+        landmarks.forEach(landmark => {
+          // 创建球体
+          const geometry = new THREE.SphereGeometry(sphereRadius, 12, 8);
+          const material = new THREE.MeshLambertMaterial({ 
+            color: state.pointColor,
+            transparent: true,
+            opacity: 0.9
+          });
+          const sphere = new THREE.Mesh(geometry, material);
+          sphere.position.copy(landmark.position);
+          sphere.userData = { landmarkId: landmark.id, landmark };
+          sphere.castShadow = true;
+          scene.add(sphere);
+          landmarkMeshes.push(sphere);
+          
+          // 创建文字标签
+          const label = createLabelSprite(landmark.id);
+          label.position.copy(landmark.position);
+          label.position.y += sphereRadius + 2;
+          label.userData = { landmarkId: landmark.id, landmark };
+          scene.add(label);
+          landmarkLabels.push(label);
+        });
+      }
+
+      function createLabelSprite(text) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 128;
+        canvas.height = 64;
+        
+        context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = '#ffffff';
+        context.font = '24px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText(text, canvas.width/2, canvas.height/2);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.SpriteMaterial({ 
+          map: texture,
+          transparent: true,
+          alphaTest: 0.1
+        });
+        const sprite = new THREE.Sprite(material);
+        sprite.scale.set(8, 4, 1);
+        sprite.renderOrder = 10;
+        
+        return sprite;
+      }
+
+      // 交互处理
+      function setupInteractionHandlers() {
+        const canvas = renderer.domElement;
+        canvas.addEventListener('pointerdown', onPointerDown);
+        canvas.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+      }
+
+      function onPointerDown(event) {
+        if (event.button !== 0) return;
+        
+        updatePointer(event);
+        raycaster.setFromCamera(pointer, camera);
+        const intersects = raycaster.intersectObjects(landmarkMeshes);
+        
+        if (intersects.length > 0) {
+          const mesh = intersects[0].object;
+          const landmarkId = mesh.userData.landmarkId;
+          
+          dragState.mesh = mesh;
+          dragState.label = landmarkLabels.find(l => l.userData.landmarkId === landmarkId);
+          dragState.landmark = landmarks.find(l => l.id === landmarkId);
+          
+          if (controls) controls.enabled = false;
+          event.preventDefault();
+          updateStatus('拖拽中... 松开鼠标完成编辑');
+        }
+      }
+
+      function onPointerMove(event) {
+        if (!dragState.mesh || !stlMesh) return;
+        
+        updatePointer(event);
+        raycaster.setFromCamera(pointer, camera);
+        const intersects = raycaster.intersectObject(stlMesh);
+        
+        if (intersects.length > 0) {
+          const newPos = intersects[0].point;
+          dragState.mesh.position.copy(newPos);
+          if (dragState.label) {
+            dragState.label.position.copy(newPos);
+            dragState.label.position.y += 3;
+          }
+          if (dragState.landmark) {
+            dragState.landmark.position.copy(newPos);
+          }
+        }
+        event.preventDefault();
+      }
+
+      function onPointerUp() {
+        if (dragState.mesh) {
+          dragState.mesh = null;
+          dragState.label = null;
+          dragState.landmark = null;
+          if (controls) controls.enabled = true;
+          updateStatus('编辑完成！你可以继续编辑其他标记点');
+        }
+      }
+
+      function updatePointer(event) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      }
+
+      // 文件处理
+      async function handleSTLFile(file) {
+        try {
+          updateStatus('正在加载STL文件...');
+          
+          const arrayBuffer = await file.arrayBuffer();
+          const loader = new THREE.STLLoader();
+          const geometry = loader.parse(arrayBuffer);
+          geometry.computeVertexNormals();
+          
+          const material = new THREE.MeshLambertMaterial({ 
+            color: 0xcccccc,
+            side: THREE.DoubleSide
+          });
+          
+          if (stlMesh) {
+            scene.remove(stlMesh);
+          }
+          
+          stlMesh = new THREE.Mesh(geometry, material);
+          stlMesh.castShadow = true;
+          stlMesh.receiveShadow = true;
+          scene.add(stlMesh);
+          
+          // 调整相机视角
+          const box = new THREE.Box3().setFromObject(stlMesh);
+          const size = box.getSize(new THREE.Vector3()).length();
+          const center = box.getCenter(new THREE.Vector3());
+          
+          if (controls) {
+            controls.target.copy(center);
+          }
+          camera.position.copy(center.clone().add(new THREE.Vector3(size * 0.5, size * 0.5, size * 1.2)));
+          
+          updateStatus('STL文件加载成功！');
+          
+          // 重新渲染landmarks
+          if (landmarks.length) {
+            renderLandmarks();
+          }
+          
+        } catch (error) {
+          updateStatus('STL文件加载失败: ' + error.message);
+          console.error('STL加载错误:', error);
+        }
+      }
+
+      async function handleJSONFile(file) {
+        try {
+          updateStatus('正在加载JSON文件...');
+          
+          const text = await file.text();
+          const json = JSON.parse(text);
+          
+          let landmarkData = [];
+          
+          if (json.landmarks && Array.isArray(json.landmarks)) {
+            landmarkData = json.landmarks;
+          } else if (json.markups && Array.isArray(json.markups) && json.markups.length > 0) {
+            const markup = json.markups[0];
+            if (markup.controlPoints && Array.isArray(markup.controlPoints)) {
+              landmarkData = markup.controlPoints.map(cp => ({
+                id: cp.id || cp.label,
+                name: cp.label || cp.id,
+                position: cp.position
+              }));
+            }
+          }
+          
+          landmarks = landmarkData.filter(lm => 
+            lm.position && Array.isArray(lm.position) && lm.position.length === 3
+          ).map(lm => ({
+            id: lm.id || lm.name || 'landmark',
+            name: lm.name || lm.id || 'landmark',
+            position: new THREE.Vector3(lm.position[0], lm.position[1], lm.position[2])
+          }));
+          
+          renderLandmarks();
+          updateStatus(`JSON文件加载成功，载入${landmarks.length}个标记点！`);
+          
+        } catch (error) {
+          updateStatus('JSON文件加载失败: ' + error.message);
+          console.error('JSON加载错误:', error);
+        }
+      }
+
+      // UI事件绑定
+      function bindUI() {
+        // 文件输入
+        document.getElementById('open-stl').addEventListener('change', (e) => {
+          const file = e.target.files[0];
+          if (file) handleSTLFile(file);
+        });
+
+        document.getElementById('open-json').addEventListener('change', (e) => {
+          const file = e.target.files[0];
+          if (file) handleJSONFile(file);
+        });
+
+        // 颜色控制
+        document.getElementById('point-color').addEventListener('input', (e) => {
+          state.pointColor = e.target.value;
+          landmarkMeshes.forEach(mesh => {
+            mesh.material.color.setStyle(state.pointColor);
+          });
+        });
+
+        // 大小控制
+        const sizeRange = document.getElementById('point-size');
+        const sizeValue = document.getElementById('point-size-value');
+        sizeRange.addEventListener('input', (e) => {
+          state.pointSizeMultiplier = parseFloat(e.target.value);
+          sizeValue.textContent = state.pointSizeMultiplier.toFixed(1);
+          renderLandmarks();
+        });
+
+        // 导出JSON
+        document.getElementById('export-json').addEventListener('click', () => {
+          if (!landmarks.length) {
+            updateStatus('没有标记点可以导出');
+            return;
+          }
+          
+          const exportData = {
+            coord_space: 'model',
+            units: 'mm',
+            landmarks: landmarks.map(lm => ({
+              id: lm.id,
+              name: lm.name,
+              position: [lm.position.x, lm.position.y, lm.position.z]
+            }))
+          };
+          
+          const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'landmarks-edited.json';
+          a.click();
+          URL.revokeObjectURL(url);
+          
+          updateStatus('标记点数据已导出');
+        });
+
+        // 重置演示
+        document.getElementById('reset-demo').addEventListener('click', () => {
+          if (stlMesh) scene.remove(stlMesh);
+          landmarkMeshes.forEach(mesh => scene.remove(mesh));
+          landmarkLabels.forEach(label => scene.remove(label));
+          
+          landmarkMeshes = [];
+          landmarkLabels = [];
+          
+          loadDemoData();
+        });
+      }
+
+      // 启动应用
+      init();
+      bindUI();
+    }
+  </script>
+</body>
+</html>
