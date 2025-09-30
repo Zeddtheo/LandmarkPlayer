@@ -1,0 +1,77 @@
+{
+  "protocol_name": "Standard Dental Landmark Protocol",
+  "version": "2.0",
+  "landmark_templates": {
+    "incisor": [
+      { "code": "m", "description": "切缘中点" },
+      { "code": "ma", "description": "近中切角点" },
+      { "code": "da", "description": "远中切角点" },
+      { "code": "mc", "description": "近中接触点" },
+      { "code": "dc", "description": "远中接触点" },
+      { "code": "bgb", "description": "唇(颊)侧龈缘中点" },
+      { "code": "lgb", "description": "舌(腭)侧龈缘中点" }
+    ],
+    "canine": [
+      { "code": "m", "description": "牙尖点" },
+      { "code": "mc", "description": "近中接触点" },
+      { "code": "dc", "description": "远中接触点" },
+      { "code": "bgb", "description": "唇(颊)侧龈缘中点" },
+      { "code": "lgb", "description": "舌(腭)侧龈缘中点" }
+    ],
+    "premolar": [
+      { "code": "b", "description": "颊尖点" },
+      { "code": "l", "description": "舌尖点" },
+      { "code": "m", "description": "中央窝点" },
+      { "code": "mr", "description": "近中边缘嵴中点" },
+      { "code": "dr", "description": "远中边缘嵴中点" },
+      { "code": "mc", "description": "近中接触点" },
+      { "code": "dc", "description": "远中接触点" },
+      { "code": "bgb", "description": "唇(颊)侧龈缘中点" },
+      { "code": "lgb", "description": "舌(腭)侧龈缘中点" }
+    ],
+    "molar": [
+        { "code": "mb", "description": "近中颊尖点" },
+        { "code": "db", "description": "远中颊尖点" },
+        { "code": "ml", "description": "近中舌尖点" },
+        { "code": "dl", "description": "远中舌尖点" },
+        { "code": "bg", "description": "颊沟点" },
+        { "code": "m", "description": "中央窝点" },
+        { "code": "mr", "description": "近中边缘嵴中点" },
+        { "code": "dr", "description": "远中边缘嵴中点" },
+        { "code": "mc", "description": "近中接触点" },
+        { "code": "dc", "description": "远中接触点" },
+        { "code": "bgb", "description": "唇(颊)侧龈缘中点" },
+        { "code": "lgb", "description": "舌(腭)侧龈缘中点" }
+    ]
+  },
+  "teeth": {
+    "11": { "description": "右上中切牙" , "quadrant": 1, "type": "incisor" },
+    "12": { "description": "右上侧切牙" , "quadrant": 1, "type": "incisor" },
+    "13": { "description": "右上尖牙" , "quadrant": 1, "type": "canine" },
+    "14": { "description": "右上第一前磨牙" , "quadrant": 1, "type": "premolar" },
+    "15": { "description": "右上第二前磨牙" , "quadrant": 1, "type": "premolar" },
+    "16": { "description": "右上第一磨牙" , "quadrant": 1, "type": "molar" },
+    "17": { "description": "右上第二磨牙" , "quadrant": 1, "type": "molar" },
+    "21": { "description": "左上中切牙" , "quadrant": 2, "type": "incisor" },
+    "22": { "description": "左上侧切牙" , "quadrant": 2, "type": "incisor" },
+    "23": { "description": "左上尖牙" , "quadrant": 2, "type": "canine" },
+    "24": { "description": "左上第一前磨牙" , "quadrant": 2, "type": "premolar" },
+    "25": { "description": "左上第二前磨牙" , "quadrant": 2, "type": "premolar" },
+    "26": { "description": "左上第一磨牙" , "quadrant": 2, "type": "molar" },
+    "27": { "description": "左上第二磨牙" , "quadrant": 2, "type": "molar" },
+    "31": { "description": "左下中切牙" , "quadrant": 3, "type": "incisor" },
+    "32": { "description": "左下侧切牙" , "quadrant": 3, "type": "incisor" },
+    "33": { "description": "左下尖牙" , "quadrant": 3, "type": "canine" },
+    "34": { "description": "左下第一前磨牙" , "quadrant": 3, "type": "premolar" },
+    "35": { "description": "左下第二前磨牙" , "quadrant": 3, "type": "premolar" },
+    "36": { "description": "左下第一磨牙" , "quadrant": 3, "type": "molar" },
+    "37": { "description": "左下第二磨牙" , "quadrant": 3, "type": "molar" },
+    "41": { "description": "右下中切牙" , "quadrant": 4, "type": "incisor" },
+    "42": { "description": "右下侧切牙" , "quadrant": 4, "type": "incisor" },
+    "43": { "description": "右下尖牙" , "quadrant": 4, "type": "canine" },
+    "44": { "description": "右下第一前磨牙" , "quadrant": 4, "type": "premolar" },
+    "45": { "description": "右下第二前磨牙" , "quadrant": 4, "type": "premolar" },
+    "46": { "description": "右下第一磨牙" , "quadrant": 4, "type": "molar" },
+    "47": { "description": "右下第二磨牙" , "quadrant": 4, "type": "molar" }
+  }
+}

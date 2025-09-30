@@ -2,26 +2,92 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>Landmark Player</title>
+  <ti  <!-- 操作指南 -->
+  <div id="guide-panel">
+    <button class="guide-close" title="隐藏操作指南">×</button>
+    <h2>🦷 操作指南</h2>
+    <ul>
+      <li><strong>加载数据：</strong> 左侧面板选择模型与标记文件</li>
+      <li><strong>视角控制：</strong> 鼠标左键旋转，右键平移，滚轮缩放</li>
+      <li><strong>标记编辑：</strong> 拖动蓝色点调整位置，双击重命名</li>
+      <li><strong>指标计算：</strong> 右上角选择计算类型并执行</li>
+    </ul>
+  </div>rk Player</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    html,body{height:100%;margin:0;background:#111;color:#ddd;font:14px/1.4 'Microsoft YaHei','微软雅黑','Microsoft YaHei UI',sans-serif}
-    #toolbar{position:fixed;top:8px;right:8px;display:flex;flex-wrap:wrap;gap:8px;z-index:10;justify-content:flex-end}
+    html,body{height:100%;margin:0;background:#111;color:#ddd;font:13px/1.4 'Microsoft YaHei','微软雅黑',sans-serif}
+    
+    /* 左侧控制面板 */
+    #left-panel{position:fixed;top:12px;left:12px;width:200px;max-height:calc(100vh - 24px);overflow-y:auto;background:rgba(31,41,59,.95);border:1px solid rgba(148,163,184,.3);border-radius:8px;padding:12px;z-index:10;backdrop-filter:blur(8px)}
+    
+    /* 右上角指标计算 */
+    #metrics-panel{position:fixed;top:12px;right:12px;background:rgba(31,41,59,.95);border:1px solid rgba(148,163,184,.3);border-radius:8px;padding:12px;z-index:10;backdrop-filter:blur(8px)}
+    
     #viewer{position:absolute;inset:0}
-    button{background:#1f2937;color:#eee;border:1px solid #334155;border-radius:6px;padding:6px 14px;cursor:pointer;display:flex;align-items:center;justify-content:center;font:600 14px/1 'Microsoft YaHei','微软雅黑','Microsoft YaHei UI',sans-serif}
+    
+    /* 左侧面板按钮样式 - 缩小版本 */
+    .panel-section{margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid rgba(148,163,184,.2)}
+    .panel-section:last-child{border-bottom:none;margin-bottom:0}
+    .panel-title{font-size:12px;color:#60a5fa;margin:0 0 8px 0;font-weight:600}
+    
+    .panel-btn{background:#374151;color:#e5e7eb;border:1px solid #4b5563;border-radius:6px;padding:8px 12px;cursor:pointer;display:block;width:100%;margin:4px 0;font:500 12px/1.3 'Microsoft YaHei','微软雅黑',sans-serif;text-align:center;box-sizing:border-box}
+    .panel-btn:hover{background:#4b5563;border-color:#6b7280;transform:translateY(-1px);transition:all 0.2s ease}
+    
+    /* 清除按钮样式 */
+    #clear-spee-curve-btn{background:#dc2626;border-color:#ef4444;color:#fecaca}
+    #clear-spee-curve-btn:hover{background:#ef4444;border-color:#f87171}
+    
+    .panel-control{background:#374151;border:1px solid #4b5563;border-radius:6px;padding:6px 8px;color:#e5e7eb;display:flex;align-items:center;gap:8px;font:500 12px/1.3 'Microsoft YaHei','微软雅黑',sans-serif;margin:4px 0}
+    .panel-control span{white-space:nowrap;font-size:10px}
+    
     input[type=file]{display:none}
-    label.btn{background:#1f2937;border:1px solid #334155;border-radius:6px;padding:6px 14px;cursor:pointer;display:flex;align-items:center;justify-content:center;font:600 14px/1 'Microsoft YaHei','微软雅黑','Microsoft YaHei UI',sans-serif}
-    #toolbar .control{background:#1f2937;border:1px solid #334155;border-radius:6px;padding:6px 12px;color:#eee;display:flex;align-items:center;gap:8px;font:600 14px/1 'Microsoft YaHei','微软雅黑','Microsoft YaHei UI',sans-serif}
-    #toolbar .control span{white-space:nowrap}
-    #point-size,#label-size{width:140px}
-    #point-size-value,#label-size-value{min-width:3ch;text-align:right}
-    input[type=color]{width:42px;height:28px;padding:0;border:none;border-radius:4px;cursor:pointer;background:transparent}
-    #guide-panel{position:fixed;top:12px;left:12px;max-width:320px;padding:18px 20px;background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.25);border-radius:10px;box-shadow:0 10px 30px rgba(15,23,42,.35);backdrop-filter:blur(12px);z-index:15;font:13px/1.5 'Microsoft YaHei','微软雅黑','Microsoft YaHei UI',sans-serif}
-    #guide-panel h2{margin:0 0 10px;font-size:16px;color:#60a5fa;display:flex;align-items:center;gap:6px}
-    #guide-panel ul{margin:0;padding-left:18px;color:#cbd5f5}
-    #guide-panel li{margin:0 0 6px 0}
-    #guide-panel .guide-close{position:absolute;top:10px;right:12px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:18px;line-height:1;padding:0;width:20px;height:20px}
+    label.panel-btn{margin:4px 0}
+    
+    #point-size,#label-size{width:80px;font-size:10px}
+    #point-size-value,#label-size-value{min-width:2ch;text-align:right;font-size:10px}
+    input[type=color]{width:24px;height:20px;padding:0;border:none;border-radius:2px;cursor:pointer;background:transparent}
+    
+    /* 指标计算面板 */
+    .metrics-select{background:#374151;color:#e5e7eb;border:1px solid #4b5563;border-radius:6px;padding:8px 12px;font:500 13px/1.3 'Microsoft YaHei','微软雅黑',sans-serif;min-width:140px}
+    .metrics-btn{background:#1f2937;color:#eee;border:1px solid #334155;border-radius:6px;padding:8px 14px;cursor:pointer;font:600 13px/1.3 'Microsoft YaHei','微软雅黑',sans-serif;transition:all 0.2s ease}
+    .metrics-btn:hover{background:#374151;border-color:#4b5563;transform:translateY(-1px)}
+    #guide-panel{position:fixed;top:12px;left:240px;max-width:300px;padding:12px 16px;background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.25);border-radius:8px;box-shadow:0 6px 20px rgba(15,23,42,.35);backdrop-filter:blur(8px);z-index:15;font:12px/1.4 'Microsoft YaHei','微软雅黑',sans-serif}
+    #guide-panel h2{margin:0 0 8px;font-size:14px;color:#60a5fa;display:flex;align-items:center;gap:4px}
+    #guide-panel ul{margin:0;padding-left:16px;color:#cbd5f5}
+    #guide-panel li{margin:0 0 4px 0;font-size:11px}
+    #guide-panel .guide-close{position:absolute;top:8px;right:10px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:16px;line-height:1;padding:0;width:18px;height:18px}
     #guide-panel .guide-close:hover{color:#e2e8f0}
+    
+    /* 坐标系测试面板样式 */
+    #coord-test-panel{position:fixed;top:50px;right:12px;width:380px;max-height:80vh;overflow-y:auto;padding:18px 20px;background:rgba(15,23,42,.95);border:1px solid rgba(148,163,184,.3);border-radius:10px;box-shadow:0 10px 30px rgba(15,23,42,.4);backdrop-filter:blur(12px);z-index:20;font:13px/1.5 'Microsoft YaHei','微软雅黑',sans-serif;display:none}
+    #coord-test-panel.show{display:block}
+    #coord-test-panel h3{margin:0 0 15px;font-size:16px;color:#60a5fa;display:flex;align-items:center;gap:6px}
+    #coord-test-panel .panel-close{position:absolute;top:12px;right:15px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:18px;line-height:1;padding:0;width:20px;height:20px}
+    #coord-test-panel .panel-close:hover{color:#e2e8f0}
+    
+    .test-controls{display:flex;gap:8px;margin-bottom:15px;flex-wrap:wrap}
+    .test-controls button{font-size:12px;padding:5px 10px}
+    .test-controls select{background:#1f2937;color:#eee;border:1px solid #334155;border-radius:6px;padding:5px 10px;font:12px 'Microsoft YaHei','微软雅黑',sans-serif}
+    
+    .test-result{margin:10px 0;padding:12px;background:rgba(30,41,59,.6);border:1px solid rgba(148,163,184,.2);border-radius:6px}
+    .test-result.success{border-color:rgba(34,197,94,.4);background:rgba(22,101,52,.2)}
+    .test-result.error{border-color:rgba(239,68,68,.4);background:rgba(127,29,29,.2)}
+    
+    .result-header{font-weight:600;color:#e2e8f0;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+    .result-details{font-size:12px;color:#cbd5f5;line-height:1.4}
+    .result-details .metric{margin:3px 0;display:flex;justify-content:space-between}
+    .result-details .metric-good{color:#86efac}
+    .result-details .metric-bad{color:#fca5a5}
+    .result-details .metric-warn{color:#fcd34d}
+    
+    .frame-vectors{font-family:monospace;font-size:11px;background:rgba(0,0,0,.3);padding:8px;border-radius:4px;margin:6px 0;color:#94a3b8}
+    
+    .summary-stats{background:rgba(30,41,59,.8);border:1px solid rgba(148,163,184,.3);border-radius:6px;padding:12px;margin:15px 0;font-size:12px}
+    .summary-stats .stat-row{display:flex;justify-content:space-between;margin:4px 0}
+    .summary-stats .stat-value{font-weight:600}
+    .summary-stats .stat-good{color:#86efac}
+    .summary-stats .stat-warn{color:#fcd34d}
+    .summary-stats .stat-bad{color:#fca5a5}
   </style>
   <link rel="icon" href="data:,">
 </head>
@@ -36,31 +102,123 @@
       <li><strong>保存结果：</strong> “保存JSON” 会导出当前标记数据；如需清空可使用“清除STL / 清除JSON”。</li>
     </ul>
   </div>
-  <div id="toolbar">
-    <label class="btn">
-      打开STL<input id="open-stl" type="file" accept=".stl">
-    </label>
-    <label class="btn">
-      打开JSON<input id="open-json" type="file" accept=".json">
-    </label>
-    <button id="save-json">保存JSON</button>
-    <div class="control">
-      <span>点颜色</span>
-      <input id="point-color" type="color" value="#1e90ff" />
+  <!-- 左侧控制面板 -->
+  <div id="left-panel">
+    <div class="panel-section">
+      <div class="panel-title">📁 数据管理</div>
+      <label class="panel-btn">
+        打开STL<input id="open-stl" type="file" accept=".stl">
+      </label>
+      <label class="panel-btn">
+        打开JSON<input id="open-json" type="file" accept=".json">
+      </label>
+      <button class="panel-btn" id="save-json">保存JSON</button>
     </div>
-    <div class="control">
-      <span>点大小</span>
-      <input id="point-size" type="range" min="0.2" max="3" step="0.1" value="1" />
-      <span id="point-size-value">1.0</span>
+
+    <div class="panel-section">
+      <div class="panel-title">🎨 显示设置</div>
+      <div class="panel-control">
+        <span>点颜色</span>
+        <input id="point-color" type="color" value="#1e90ff" />
+      </div>
+      <div class="panel-control">
+        <span>点大小</span>
+        <input id="point-size" type="range" min="0.2" max="3" step="0.1" value="1" />
+        <span id="point-size-value">1.0</span>
+      </div>
+      <div class="panel-control">
+        <span>文字大小</span>
+        <input id="label-size" type="range" min="0.5" max="2.5" step="0.1" value="1" />
+        <span id="label-size-value">1.0</span>
+      </div>
     </div>
-    <div class="control">
-      <span>文字大小</span>
-      <input id="label-size" type="range" min="0.5" max="2.5" step="0.1" value="1" />
-      <span id="label-size-value">1.0</span>
+
+    <div class="panel-section">
+      <div class="panel-title">🎯 视图控制</div>
+      <button class="panel-btn" id="center-view-btn">居中显示</button>
+      <button class="panel-btn" id="reset-view-btn">重置视图</button>
     </div>
-    <button id="clear-stl">清除STL</button>
-    <button id="clear-json">清除JSON</button>
+
+    <div class="panel-section">
+      <div class="panel-title">🗑️ 清理操作</div>
+      <button class="panel-btn" id="clear-stl">清除STL</button>
+      <button class="panel-btn" id="clear-json">清除JSON</button>
+    </div>
+
+
+    
+    <div class="panel-section">
+      <div class="panel-title">🧪 自动测试</div>
+      <button class="panel-btn" onclick="LandmarkDemo.autoTestAllCases()">测试所有案例</button>
+    </div>
   </div>
+
+  <!-- 右上角指标计算面板 -->
+  <div id="metrics-panel">
+    <select class="metrics-select" id="metrics-type">
+      <option value="">选择指标计算</option>
+      <option value="module-1">1. 咬合坐标系</option>
+      <option value="module-2">2. Spee曲线</option>
+      <option value="module-3">3. Bolton比例</option>
+      <option value="module-4">4. 锁牙合</option>
+      <option value="module-5">5. 牙列中线</option>
+      <option value="module-6">6. 拥挤度</option>
+      <option value="module-7">7. 磨牙关系</option>
+      <option value="module-8">8. 前牙覆𬌗</option>
+      <option value="module-9">9. 前牙覆盖</option>
+      <option value="module-10">10. 牙弓宽度</option>
+      <option value="module-11">11. 牙弓形态</option>
+    </select>
+    <button class="metrics-btn" id="execute-metrics">执行</button>
+    <button class="metrics-btn" id="clear-analysis" style="background:#dc2626;border-color:#ef4444;color:#fecaca;margin-left:8px;">清除</button>
+  </div>
+  
+  <!-- 坐标系测试面板 -->
+  <div id="coord-test-panel">
+    <button class="panel-close" title="关闭面板">×</button>
+    <h3>🧪 坐标系测试面板</h3>
+    
+    <div class="test-controls">
+      <button id="test-all-btn">测试所有病例</button>
+      <select id="single-case-select">
+        <option value="">选择单个病例</option>
+        <option value="1_L">病例1-下颌</option>
+        <option value="1_U">病例1-上颌</option>
+        <option value="2_L">病例2-下颌</option>  
+        <option value="2_U">病例2-上颌</option>
+      </select>
+      <button id="test-single-btn">测试单个</button>
+      <button id="clear-results-btn">清除结果</button>
+    </div>
+    
+    <div id="test-summary" class="summary-stats" style="display:none">
+      <div class="stat-row">
+        <span>测试总数:</span>
+        <span id="total-count" class="stat-value">0</span>
+      </div>
+      <div class="stat-row">
+        <span>构建成功:</span>
+        <span id="success-count" class="stat-value stat-good">0</span>
+      </div>
+      <div class="stat-row">
+        <span>坐标系有效:</span>
+        <span id="valid-count" class="stat-value stat-good">0</span>
+      </div>
+      <div class="stat-row">
+        <span>平均标记点:</span>
+        <span id="avg-landmarks" class="stat-value">0</span>
+      </div>
+      <div class="stat-row">
+        <span>平均FDI覆盖率:</span>
+        <span id="avg-fdi" class="stat-value">0%</span>
+      </div>
+    </div>
+    
+    <div id="test-results">
+      <p style="color:#94a3b8;text-align:center;margin:20px 0;">点击上方按钮开始测试</p>
+    </div>
+  </div>
+
   <div id="viewer"></div>
 
   <!-- Import map 绑定 CDN 上的 three 生态 -->
