@@ -1,5 +1,62 @@
 import numpy as np
-from typing import List, Dict, Any, Optional, Tuple, Union
+import json, os
+from typing import List, Dict, Optional, Tuple
+
+# ==========================================
+# Public API: generate_metrics
+# 输入：上/下 STL + 上/下 JSON
+# 输出：JSON
+# ==========================================
+def generate_metrics(
+    upper_stl_path: str,
+    lower_stl_path: str,
+    upper_json_path: str,
+    lower_json_path: str,
+    out_path: str = "",
+    cfg: Optional[Dict] = None
+) -> Dict:
+    """
+    返回形如：
+    {
+      "Arch_Form_牙弓形态*": "尖圆形✅",
+      "Arch_Width_牙弓宽度*": "上牙弓较窄 ✅",
+      ... 共 11 条 ...
+    }
+    若提供 out_path，则同时写盘（UTF-8，无转义）。
+    """
+    cfg = cfg or {}
+
+    # 1) 读取 landmarks（复用上面提供的 I/O 小函数）
+    lm_upper = _load_landmarks_json(upper_json_path)
+    lm_lower = _load_landmarks_json(lower_json_path)
+    landmarks = _merge_landmarks(lm_upper, lm_lower)
+
+    # 2) 读取并合并 STL 点云（可为空；假设已配准）
+    geom_points = _combine_and_sample_points(
+        upper_stl_path, lower_stl_path,
+        max_points=cfg.get('max_points', 8000)
+    )
+
+    # 3) 咬合坐标系
+    frame_res = build_occlusal_frame(landmarks, geom_points=geom_points, cfg=cfg.get('frame'))
+    frame = frame_res.get('frame')
+    if frame is None:
+        kv = {"错误": "坐标系缺失，无法生成报告"}
+        if out_path:
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(kv, f, ensure_ascii=False, indent=2)
+        return kv
+
+    # 4) 生成 brief 列表，并转成 {键: 值}
+    brief_lines = make_brief_report(landmarks, frame)
+    kv = _brief_lines_to_kv(brief_lines)
+
+    # 5) 可选落盘
+    if out_path:
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(kv, f, ensure_ascii=False, indent=2)
+
+    return kv
 
 # =======================================================================
 # Module #0: Occlusal Frame
@@ -1309,8 +1366,12 @@ def compute_overbite(
                 'used': {}}
 
     # 取点（优先 m，切角 ma 作为回退仅在上中切牙；下切牙用 m）
-    U11 = _get('11m') or _get('11ma')
-    U21 = _get('21m') or _get('21ma')
+    U11 = _get('11m')
+    if U11 is None:
+        U11 = _get('11ma')
+    U21 = _get('21m')
+    if U21 is None:
+        U21 = _get('21ma')
     L41 = _get('41m')
     L31 = _get('31m')
 
@@ -1419,7 +1480,9 @@ def compute_overjet(
     # ---- 单侧计算 ----
     def side_oj(U_nm: List[str], Lm_nm: str, Lbgb_nm: str):
         # 上切缘：优先 m，回退 ma
-        U = _get(U_nm[0]) or _get(U_nm[1])
+        U = _get(U_nm[0])
+        if U is None:
+            U = _get(U_nm[1])
         Lm = _get(Lm_nm)
         Lbgb = _get(Lbgb_nm)
         if U is None or Lm is None:
@@ -1607,5 +1670,122 @@ def make_brief_report(landmarks, frame):
         report_overjet(landmarks, frame),
     ]
 
+# ================================
+# I/O helpers (STL + Landmarks)
+# ================================
+import json, os, numpy as np
+from typing import Dict, List, Optional
+
+def _load_landmarks_json(path: str) -> Dict[str, List[float]]:
+    """读取 Slicer Markups JSON，提取 {label: position} 字典。"""
+    with open(path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    out = {}
+    # 健壮性检查：确保路径存在且结构符合预期
+    if not data or 'markups' not in data or not data['markups']:
+        return out
+    
+    # 通常只有一个 markup list，但可以遍历以防万一
+    for markup in data['markups']:
+        if 'controlPoints' not in markup:
+            continue
+        for cp in markup['controlPoints']:
+            label = cp.get('label')
+            pos = cp.get('position')
+            if label and isinstance(pos, list) and len(pos) == 3:
+                try:
+                    out[str(label)] = [float(pos[0]), float(pos[1]), float(pos[2])]
+                except (ValueError, TypeError):
+                    pass  # 忽略无法转换的坐标
+    return out
+
+def _merge_landmarks(*dicts: Dict[str, List[float]]) -> Dict[str, List[float]]:
+    """简单合并（后者覆盖前者）。上下颌 FDI 编码本身不冲突，一般不会覆盖。"""
+    out = {}
+    for d in dicts:
+        out.update(d or {})
+    return out
+
+def _load_stl_points(path: str) -> Optional[np.ndarray]:
+    """尽量读取 STL 顶点点云。优先 trimesh；回退 numpy-stl；都不可用则返回 None。"""
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        import trimesh  # type: ignore
+        m = trimesh.load(path, force='mesh')
+        if hasattr(m, 'vertices'):
+            P = np.asarray(m.vertices, dtype=float)
+            return P[np.isfinite(P).all(axis=1)]
+    except Exception:
+        pass
+    try:
+        from stl import mesh  # type: ignore
+        m = mesh.Mesh.from_file(path)
+        P = m.vectors.reshape(-1, 3)
+        return P[np.isfinite(P).all(axis=1)]
+    except Exception:
+        return None
+
+def _combine_and_sample_points(upper_stl: Optional[str], lower_stl: Optional[str],
+                               max_points: int = 8000) -> Optional[List[np.ndarray]]:
+    """合并上下 STL 点并下采样为列表（给 build_occlusal_frame 的 geom_points）。"""
+    Pu = _load_stl_points(upper_stl) if upper_stl else None
+    Pl = _load_stl_points(lower_stl) if lower_stl else None
+    if Pu is None and Pl is None:
+        return None
+    P = Pu if Pl is None else (Pl if Pu is None else np.vstack([Pu, Pl]))
+    if len(P) > max_points:
+        idx = np.random.choice(len(P), size=max_points, replace=False)
+        P = P[idx]
+    return [P[i] for i in range(len(P))]
+
+# ==========================================
+# Public API: analyze_case_brief (核心接口)
+# ==========================================
+# ==========================================
+# 把 brief 列表转换为 {键: 值} 的字典
+# 例如 "Arch_Form_牙弓形态*: 尖圆形✅"
+#  -> 键: "Arch_Form_牙弓形态*", 值: "尖圆形✅"
+# 例如 "Crossbite_锁牙合: 无 ✅"
+#  -> 键: "Crossbite_锁牙合", 值: "无 ✅"
+# ==========================================
+def _brief_lines_to_kv(brief_lines):
+    kv = {}
+    for line in (brief_lines or []):
+        line = (line or "").strip()
+        if not line:
+            continue
+        if "*:" in line:
+            k, v = line.split("*:", 1)
+            key = (k.strip() + "*")
+            val = v.strip()
+        elif ":" in line:
+            k, v = line.split(":", 1)
+            key = k.strip()
+            val = v.strip()
+        else:
+            # 没有冒号的非常规行，整行作为值
+            key = line
+            val = ""
+        kv[key] = val
+    return kv
+
+
+
+# ==========================
+# 可选：命令行入口（直接落盘）
+# ==========================
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="Ortho analysis → brief key-value JSON")
+    ap.add_argument("--upper_stl", required=True)
+    ap.add_argument("--lower_stl", required=True)
+    ap.add_argument("--upper_json", required=True)
+    ap.add_argument("--lower_json", required=True)
+    ap.add_argument("--out", required=True, help="输出 JSON 路径")
+    args = ap.parse_args()
+
+    kv = generate_metrics(args.upper_stl, args.lower_stl, args.upper_json, args.lower_json, out_path=args.out)
+    print(f"saved to: {args.out} ({len(kv)} items)")
 
 
