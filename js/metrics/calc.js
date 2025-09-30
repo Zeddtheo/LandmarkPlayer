@@ -1,4 +1,4 @@
-// ========= js/metrics/calc.js (hybrid refresh, slim + Crossbite) =========
+﻿// ========= js/metrics/calc.js (hybrid refresh, slim + Crossbite) =========
 import {
   vAdd, vSub, vDot, vCross, vLen, vNrm, centroid, projOnPlane,
   pick, collectLowerPosteriorBuccal, projectToFrame, framePretty as _framePretty,
@@ -6,21 +6,15 @@ import {
 } from './utils.js';
 
 /* ======================================================================= */
-/* ========== Module #1: Occlusal Frame（X=前后, Y=左右, Z=上下） ========== */
+/* ========== Module #0: Occlusal Frame（X=前后, Y=左右, Z=上下） ========== */
 /* ======================================================================= */
-
-// --- 小工具：右手系正交化（以 ez 为锚） ---
 function _reOrthoRH(ex, ey, ez){
   ez = vNrm(ez);
-  // ex 去掉与 ez 的分量并归一
   const proj = vDot(ex, ez);
   ex = vNrm([ ex[0]-ez[0]*proj, ex[1]-ez[1]*proj, ex[2]-ez[2]*proj ]);
-  // 由右手系定义 ey
   ey = vNrm(vCross(ez, ex));
   return { ex, ey, ez };
 }
-
-// --- 几何版：点云稳健 PCA + 截尾重估，得到近似咬合平面法向 ez、平面主轴 e1/e2 ---
 function _buildFrameFromGeometry(points, cfg={}){
   const warnings=[];
   if(!points || points.length < 50){
@@ -28,8 +22,6 @@ function _buildFrameFromGeometry(points, cfg={}){
   }
   const maxPoints = cfg.maxPoints ?? 6000;
   const trimPct   = cfg.trimPct   ?? 0.5;
-
-  // 均匀抽样
   const nAll = points.length;
   let idx = Array.from({length:nAll}, (_,i)=>i);
   if(nAll > maxPoints){
@@ -51,7 +43,6 @@ function _buildFrameFromGeometry(points, cfg={}){
   const eigMaxVec = (A, avoid=null)=>{
     let v = [1,0,0];
     if(avoid){
-      // 初始化时与 avoid 近正交
       v = [Math.random(),Math.random(),Math.random()];
       const pr = vDot(v, avoid);
       v = vNrm(vSub(v, [avoid[0]*pr, avoid[1]*pr, avoid[2]*pr]));
@@ -70,14 +61,10 @@ function _buildFrameFromGeometry(points, cfg={}){
     }
     return vNrm(v);
   };
-
-  // 第一次 PCA
   const A0  = cov3(P, c0);
   const e1_0 = eigMaxVec(A0);
   const e2_0 = eigMaxVec(A0, e1_0);
   let ez0 = vNrm(vCross(e1_0, e2_0));
-
-  // 截尾重估（剔除离平面远的点）
   const distToPlane = (q, c, n)=>Math.abs(vDot(vSub(q,c), n));
   const dists = P.map(p=>distToPlane(p,c0,ez0));
   const order = dists.map((d,i)=>[d,i]).sort((a,b)=>a[0]-b[0]);
@@ -89,42 +76,28 @@ function _buildFrameFromGeometry(points, cfg={}){
   const e1  = eigMaxVec(A1);
   const e2  = eigMaxVec(A1, e1);
   let ez = vNrm(vCross(e1, e2)); // 法向
-
-  // 在平面内找左右端 + 前端锚点
   const proj2 = (q)=>{ const v=vSub(q,cin); return {x:vDot(v,e1), y:vDot(v,e2), ref:q}; };
   const P2 = Pin.map(proj2);
-
-  // 质心最远点 A，再找距 A 最远点 B
   const c2={x:0,y:0}; for(const p of P2){ c2.x+=p.x; c2.y+=p.y; } c2.x/=P2.length; c2.y/=P2.length;
   let iA=0, best=-1; for(let i=0;i<P2.length;i++){ const dx=P2[i].x-c2.x, dy=P2[i].y-c2.y; const d=dx*dx+dy*dy; if(d>best){best=d;iA=i;} }
   const farFrom = (arr, i0)=>{ let bi=0, bd=-1; const a=arr[i0]; for(let i=0;i<arr.length;i++){ const dx=arr[i].x-a.x, dy=arr[i].y-a.y; const d=dx*dx+dy*dy; if(d>bd){bd=d;bi=i;} } return bi; };
   const iB = farFrom(P2, iA);
-
-  // 以 A,B 中点为基准，寻找最远点 F（近似前方）
   const M2={x:(P2[iA].x+P2[iB].x)/2, y:(P2[iA].y+P2[iB].y)/2};
   let iF=0, bestF=-1; for(let i=0;i<P2.length;i++){ const dx=P2[i].x-M2.x, dy=P2[i].y-M2.y; const d=dx*dx+dy*dy; if(d>bestF){bestF=d;iF=i;} }
-
-  // 构造 ex/ey（未定号），再正交化为右手系
   const pA=P2[iA], pB=P2[iB], pF=P2[iF];
   const isALeft = pA.y >= pB.y;
   const pL = isALeft ? pA : pB;
   const pR = isALeft ? pB : pA;
   const y_dir2 = vNrm([pL.x - pR.x, pL.y - pR.y, 0]);      // 平面内左右向
   const x_dir2 = vNrm([pF.x - M2.x, pF.y - M2.y, 0]);      // 平面内前后向
-
-  // 回到 3D
   let ex = vNrm([ e1[0]*x_dir2[0] + e2[0]*x_dir2[1], e1[1]*x_dir2[0] + e2[1]*x_dir2[1], e1[2]*x_dir2[0] + e2[2]*x_dir2[1] ]);
   let ey = vNrm([ e1[0]*y_dir2[0] + e2[0]*y_dir2[1], e1[1]*y_dir2[0] + e2[1]*y_dir2[1], e1[2]*y_dir2[0] + e2[2]*y_dir2[1] ]);
   ({ex,ey,ez} = _reOrthoRH(ex, ey, ez));
-
-  // 原点选 M 的 3D 位置
   const origin = [
     cin[0] + e1[0]*M2.x + e2[0]*M2.y,
     cin[1] + e1[1]*M2.x + e2[1]*M2.y,
     cin[2] + e1[2]*M2.x + e2[2]*M2.y,
   ];
-
-  // 平面拟合质量（RMS）
   const rms = Math.sqrt(order.slice(0, keepN).reduce((s,[d])=>s+d*d,0)/keepN);
   if(rms > 1.5) warnings.push(`large plane RMS ~ ${rms.toFixed(2)} mm`);
 
@@ -135,11 +108,8 @@ function _buildFrameFromGeometry(points, cfg={}){
     used:{ n_in:keepN, n_all:nAll, posterior_pair:[idx[keptIdx[iA]]??iA, idx[keptIdx[iB]]??iB], anterior_idx: idx[keptIdx[iF]]??iF }
   };
 }
-
-// --- 旧版（仅 landmarks）平面估计：无点云时的回退 ---
 function _buildFrameFromLandmarks(landmarks){
   const warnings=[], used={};
-  // posterior buccal 样本；不足则用全部点位
   let samples = collectLowerPosteriorBuccal(landmarks);
   used.sample_count = samples.length;
   if(samples.length < 3){
@@ -150,8 +120,6 @@ function _buildFrameFromLandmarks(landmarks){
     return { frame:null, quality:'missing', warnings:['insufficient points'], used };
   }
   const o = centroid(samples);
-
-  // 面积法估法向（与旧实现一致）
   let n=[0,0,0];
   for(let i=0;i<samples.length;i++){
     const vi=vSub(samples[i],o);
@@ -161,12 +129,8 @@ function _buildFrameFromLandmarks(landmarks){
     }
   }
   let ez = vLen(n) ? vNrm(n) : [0,0,1];
-
-  // Y 初始方向（投影平均）
   let dir = samples.reduce((acc,p)=>vAdd(acc, projOnPlane(vSub(p,o), ez)), [0,0,0]);
   let ey = vLen(dir) ? vNrm(dir) : [1,0,0];
-
-  // X = Y × Z；再回算 Y
   let ex = vNrm(vCross(ey, ez));
   ey = vNrm(vCross(ez, ex));
   return { frame:{ origin:o, ex, ey, ez }, quality:'fallback', warnings, used };
@@ -179,7 +143,6 @@ function _buildFrameFromLandmarks(landmarks){
  * @param cfg 可选：{ maxPoints, trimPct }
  */
 export function buildOcclusalFrame(landmarks, geomPoints=null, cfg={}){
-  // 1) 主体：几何点云 → 稳健 frame；没有点云就用 landmarks 回退
   const base = Array.isArray(geomPoints) && geomPoints.length>50 && Array.isArray(geomPoints[0])
     ? _buildFrameFromGeometry(geomPoints, cfg)
     : _buildFrameFromLandmarks(landmarks);
@@ -190,8 +153,6 @@ export function buildOcclusalFrame(landmarks, geomPoints=null, cfg={}){
   const warnings = [...(base.warnings||[])];
   const used = { ...(base.used||{}), z_from:'geometry', y_from:'geometry', x_from:'geometry' };
   let quality = base.quality;
-
-  // 2) Z 极性：用 11m/31m 或 21m/41m 的相对方向（上 - 下）校正 ez
   const U11 = pick(landmarks,['11m']), U21 = pick(landmarks,['21m']);
   const L31 = pick(landmarks,['31m']), L41 = pick(landmarks,['41m']);
   const Uc = (U11&&U21)? [(U11[0]+U21[0])/2,(U11[1]+U21[1])/2,(U11[2]+U21[2])/2] : (U11||U21);
@@ -208,8 +169,6 @@ export function buildOcclusalFrame(landmarks, geomPoints=null, cfg={}){
     warnings.push('Z calibration skipped (need 11/21 & 31/41)');
     quality = quality==='ok' ? 'fallback' : quality;
   }
-
-  // 3) Y 号向：33m→43m，保证 ey 指向 右→左
   const L33 = pick(landmarks, ['33m']) || pick(landmarks,['33mc']);
   const R43 = pick(landmarks, ['43m']) || pick(landmarks,['43mc']);
   if(L33 && R43){
@@ -223,8 +182,6 @@ export function buildOcclusalFrame(landmarks, geomPoints=null, cfg={}){
     warnings.push('Y orientation skipped (need 33m & 43m)');
     quality = quality==='ok' ? 'fallback' : quality;
   }
-
-  // 4) X 微调：前/后中线点在咬合平面内的方向
   const mid = (a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2];
 
   const UFront = (U11 && U21) ? mid(U11,U21) : null;
@@ -265,7 +222,7 @@ export function buildOcclusalFrame(landmarks, geomPoints=null, cfg={}){
 export const framePretty = _framePretty; // 复用 utils 的文本化
 
 /* ======================================================================= */
-/* ========== Module #2: Spee（下颌曲度） — 保持既有语义 ================== */
+/* ========== Module #1: Spee（下颌曲度） — 保持既有语义 ================== */
 /* ======================================================================= */
 const _mid = (a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2];
 
@@ -277,8 +234,6 @@ const _mid = (a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2];
 export function computeSpeeLowerDepth(landmarks, frame){
   const used = { samples:[], A_name:null, B_name:null };
   const warn = [];
-
-  // A
   const P31ma = pick(landmarks, ['31ma']);
   const P41ma = pick(landmarks, ['41ma']);
   let A3D=null; let Aname=null;
@@ -294,20 +249,14 @@ export function computeSpeeLowerDepth(landmarks, frame){
   }
   if(!A3D) return { depth_mm:null, chord:{A:null,B:null}, used, quality:'missing', method:'perp_to_chord_sagittal' };
   used.A_name = Aname;
-
-  // B candidates
   const candB = ['37db','47db','37mb','47mb','36db','46db','36mb','46mb']
     .map(nm => ({ nm, p: pick(landmarks, [nm]) }))
     .filter(o => !!o.p);
   if(candB.length===0) return { depth_mm:null, chord:{A:A3D,B:null}, used, quality:'missing', method:'perp_to_chord_sagittal' };
-
-  // X=AP，+X 向前；远中=后方 → 取 x 最小
   let Bpick = candB[0], Bx = projectToFrame(Bpick.p, frame).x;
   for(const c of candB){ const x = projectToFrame(c.p, frame).x; if(x < Bx){ Bx=x; Bpick=c; } }
   const B3D = Bpick.p; used.B_name = Bpick.nm;
   const chordNotes = (Bpick.nm.startsWith('37')||Bpick.nm.startsWith('47')) ? 'distal=second molar' : 'distal=fallback first molar';
-
-  // 采样
   const names = ['33m','34b','35b','36mb','36db','37mb','37db','43m','44b','45b','46mb','46db','47mb','47db'];
   const S3D=[], A2=projectToFrame(A3D,frame), B2=projectToFrame(B3D,frame);
   const xmin=Math.min(A2.x,B2.x), xmax=Math.max(A2.x,B2.x);
@@ -318,8 +267,6 @@ export function computeSpeeLowerDepth(landmarks, frame){
     if(pr.x >= xmin-1e-6 && pr.x <= xmax+1e-6){ S3D.push(p); used.samples.push(nm); }
   }
   if(S3D.length<2) warn.push('few buccal samples between A and B');
-
-  // 计算：矢状面内到弦的“向下”最大垂距
   const ux=B2.x-A2.x, uz=B2.z-A2.z, L=Math.hypot(ux,uz)||1e-9;
   const u={x:ux/L,z:uz/L}; let n={x:-u.z,z:u.x}; if(n.z>0){n.x=-n.x;n.z=-n.z;}
   const useVertical = Math.abs(n.z)<1e-3;
@@ -351,7 +298,7 @@ export function computeSpeeLowerDepth(landmarks, frame){
 }
 
 /* ======================================================================= */
-/* ========== Module #3: Bolton（前牙比 & 全牙比） ======================== */
+/* ========== Module #2: Bolton（前牙比 & 全牙比） ======================== */
 /* ======================================================================= */
 function mdWidthOfTooth(landmarks, toothFDI, opt={}){
   const mc = pick(landmarks, [toothFDI+'mc']);
@@ -409,7 +356,7 @@ export function computeBolton(landmarks, cfg={}){
 }
 
 /* ======================================================================= */
-/* ========== Module #4: Crossbite_锁牙合（侧别判定） ===================== */
+/* ========== Module #3: Crossbite_锁牙合（侧别判定） ===================== */
 /* ======================================================================= */
 /**
  * Crossbite / 锁牙合（侧别判定）
@@ -428,8 +375,6 @@ export function computeCrossbiteLock(landmarks, frame, cfg = {}){
   const minPairs = cfg.min_pairs ?? 2;
   const warnings = [];
   if(!frame) return { left:null, right:null, threshold_mm:t, quality:'missing', warnings:['no frame'] };
-
-  // ——— 工具：取首个存在的标记点；投影到 frame 取 y ———
   const pickOne = (names)=>{
     for(const nm of names){
       const p = landmarks?.[nm];
@@ -438,8 +383,6 @@ export function computeCrossbiteLock(landmarks, frame, cfg = {}){
     return null;
   };
   const yOf = (p)=> projectToFrame(p, frame).y;
-
-  // ——— 侧别定义与牙位列表（首选 4、5、6、7；按你的数据可增减）———
   const TEETH = {
     right: { // 1x / 4x
       upper: ['14','15','16','17'],
@@ -452,8 +395,6 @@ export function computeCrossbiteLock(landmarks, frame, cfg = {}){
       sideSign: +1
     }
   };
-
-  // ——— 每颗牙提取 buccal / lingual 的候选标记 ———
   const BUCCAL_CANDS  = (t)=>[`${t}mb`, `${t}db`, `${t}b`, `${t}bg`];
   const LINGUAL_CANDS = (t)=>[`${t}ml`, `${t}dl`, `${t}l`, `${t}lgb`];
 
@@ -470,8 +411,6 @@ export function computeCrossbiteLock(landmarks, frame, cfg = {}){
   function sideEval(sideKey){
     const side = TEETH[sideKey];
     const sgn = side.sideSign;
-
-    // 取四组：U-Lingual, U-Buccal, L-Lingual, L-Buccal
     const UL = collectSide(side.upper, 'lingual');
     const UB = collectSide(side.upper, 'buccal');
     const LL = collectSide(side.lower, 'lingual');
@@ -488,18 +427,12 @@ export function computeCrossbiteLock(landmarks, frame, cfg = {}){
     const counts = { UL:UL.ys.length, UB:UB.ys.length, LL:LL.ys.length, LB:LB.ys.length };
     const used = { UL:UL.usedNames, UB:UB.usedNames, LL:LL.usedNames, LB:LB.usedNames };
     const sideWarnings = [];
-
-    // 需要至少 minPairs 个有效牙位参与（任意组不足将降级为 fallback）
     const enoughA = counts.UL >= minPairs && counts.LB >= minPairs;
     const enoughB = counts.UB >= minPairs && counts.LL >= minPairs;
     if(!enoughA) sideWarnings.push(`few UL/LB points (need ≥${minPairs})`);
     if(!enoughB) sideWarnings.push(`few UB/LL points (need ≥${minPairs})`);
-
-    // 两个关键差值（越大表示“更向颊侧”）
     const delta_UL_vs_LB = (Number.isFinite(m_UL) && Number.isFinite(m_LB)) ? (m_UL - m_LB) : null;
     const delta_UB_vs_LL = (Number.isFinite(m_UB) && Number.isFinite(m_LL)) ? (m_UB - m_LL) : null;
-
-    // 判定
     let status = '无';
     if (enoughA && delta_UL_vs_LB!=null && delta_UL_vs_LB > t) status = '正锁';
     else if (enoughB && delta_UB_vs_LL!=null && delta_UB_vs_LL < -t) status = '反锁';
@@ -525,7 +458,7 @@ export function computeCrossbiteLock(landmarks, frame, cfg = {}){
   return { right, left, threshold_mm:t, quality, warnings };
 }
 /* ======================================================================= */
-/* ========== Module #5: Midline_Alignment（牙列中线） ==================== */
+/* ========== Module #4: Midline_Alignment（牙列中线） ==================== */
 /* ======================================================================= */
 /**
  * 牙列中线（相对正中矢状面 Y=0 的横向偏移）
@@ -643,7 +576,7 @@ export function computeMidlineAlignment(landmarks, frame, cfg = {}){
   };
 }
 /* ======================================================================= */
-/* ========== Module #6: Crowding_拥挤度（Gap + ALD 有符号） ============== */
+/* ========== Module #5: Crowding_拥挤度（Gap + ALD 有符号） ============== */
 /* ======================================================================= */
 /**
  * 拥挤度两种量化同时给：
@@ -673,14 +606,10 @@ export function computeCrowding(landmarks, frame, cfg = {}){
   if(usePlane && !frame){
     return { upper:null, lower:null, quality:'missing', warnings:['no frame (use_plane=true)'] };
   }
-
-  // 默认前牙序列（按患者视角：左→右）
   const U_ANT = ['23','22','21','11','12','13'];
   const L_ANT = ['33','32','31','41','42','43'];
 
   const buildPairsFromSeq = (seq)=> seq.slice(0, -1).map((_,i)=> [seq[i], seq[i+1]]);
-
-  // —— 接触点/宽度工具 ——
   const getContact = (tooth, kind)=> {
     if(kind==='mc'){
       return pick(landmarks, [ `${tooth}mc`, `${tooth}mr`, `${tooth}m` ]);
@@ -692,8 +621,6 @@ export function computeCrowding(landmarks, frame, cfg = {}){
     const { width } = mdWidthOfTooth(landmarks, tooth, { use_plane:usePlane, frame });
     return width;
   };
-
-  // —— 可用空间（available / gap）——
   const measurePairs = (pairs)=>{
     const per = {};
     const used = [];
@@ -735,8 +662,6 @@ export function computeCrowding(landmarks, frame, cfg = {}){
       warnings
     };
   };
-
-  // —— 需求空间（required）——
   const measureTeeth = (teeth)=>{
     const per = {};
     let sum = 0; let nValid = 0; const miss = [];
@@ -756,8 +681,6 @@ export function computeCrowding(landmarks, frame, cfg = {}){
       warnings
     };
   };
-
-  // —— 选择对/牙 ——（可被 cfg 覆盖）
   const defSeqU = (segment==='anterior') ? U_ANT : U_ANT; // 目前只做前牙段
   const defSeqL = (segment==='anterior') ? L_ANT : L_ANT;
   const upperPairs = cfg.pairs && arch!=='lower' ? cfg.pairs : buildPairsFromSeq(defSeqU);
@@ -780,8 +703,6 @@ export function computeCrowding(landmarks, frame, cfg = {}){
     const quality =
       (gap.n_pairs===0 || req.n_teeth===0) ? 'missing'
       : (warnings.length ? 'fallback' : 'ok');
-
-    // 简化：仅保留gap_sum_mm字段
     return {
       gap_sum_mm: gap.gap_sum_mm,
       required_sum_mm: req.required_sum_mm,
@@ -801,8 +722,6 @@ export function computeCrowding(landmarks, frame, cfg = {}){
 
   const upper = (arch==='upper'||arch==='both') ? assemble(upperPairs, upperTeeth) : null;
   const lower = (arch==='lower'||arch==='both') ? assemble(lowerPairs, lowerTeeth) : null;
-
-  // 汇总质量
   const parts = [upper, lower].filter(Boolean);
   let quality = 'missing'; const allWarn=[];
   if(parts.length){
@@ -815,7 +734,7 @@ export function computeCrowding(landmarks, frame, cfg = {}){
 }
 
 /* ======================================================================= */
-/* ========== Module #7: Molar_Relationship（磨牙关系：完全远中） ========= */
+/* ========== Module #6: Molar_Relationship（磨牙关系：完全远中） ========= */
 /* ======================================================================= */
 /**
  * 判据（每侧）：
@@ -851,14 +770,10 @@ export function computeMolarRelationship(landmarks, frame, cfg = {}){
 
     return { status, delta_x_mm:dx, used:{U_name:U.name, L_name:L.name}, warnings:sideWarnings };
   };
-
-  // 右侧：16mb vs 46mr（回退 46mc）
   const right = evalSide({
     U_cand: ['16mb', '16db', '16bg'],
     L_cand: ['46mr', '46mc', '46m']
   });
-
-  // 左侧：26mb vs 36mr（回退 36mc）
   const left = evalSide({
     U_cand: ['26mb', '26db', '26bg'],
     L_cand: ['36mr', '36mc', '36m']
@@ -870,15 +785,13 @@ export function computeMolarRelationship(landmarks, frame, cfg = {}){
   return { right, left, threshold_mm:t, quality, warnings };
 }
 // ─────────────────────────────────────────────────────────────────────────────
-// Module #8 — Overbite_前牙覆𬌗（正中矢状面，切缘中点）
+// Module #7 — Overbite_前牙覆𬌗（正中矢状面，切缘中点）
 // 约定：OB = z_lower - z_upper（在咬合坐标系下、投影至 Y=0 后）；正=覆𬌗，负=开𬌗
 // 依赖：frame={origin,ex,ey,ez}（单位向量，右手系），landmarks(单位:mm)
 // 输入 landmarks 需包含 11/21/31/41 的切缘中点；可选 31/41 的龈缘中点用于冠高
 // ─────────────────────────────────────────────────────────────────────────────
 export function computeOverbite(landmarks, frame, options = {}) {
   const dec = options.dec ?? 2;
-
-  // 允许外部传入 utils；否则用最小内置实现
   const U = options.utils ?? {
     dot: (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2],
     sub: (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]],
@@ -905,13 +818,10 @@ export function computeOverbite(landmarks, frame, options = {}) {
   };
 
   const sel = {
-    // 上颌中切牙（切缘中点）
     U_right: options.selectors?.U_right ?? ["11m"],
     U_left : options.selectors?.U_left  ?? ["21m"],
-    // 下颌中切牙（切缘中点）
     L_right: options.selectors?.L_right ?? ["41m"],
     L_left : options.selectors?.L_left  ?? ["31m"],
-    // 下颌中切牙（龈缘/颈部中点，用于临床冠高；可选）
     L_crown_base_right: options.selectors?.L_crown_base_right ?? ["41bgb"],
     L_crown_base_left : options.selectors?.L_crown_base_left  ?? ["31bgb"],
   };
@@ -924,8 +834,6 @@ export function computeOverbite(landmarks, frame, options = {}) {
     crown_height: "euclidean (incisal_mid -> gingival_mid) if provided",
     dec,
   };
-
-  // 基础校验
   if (!frame?.origin || !frame?.ex || !frame?.ey || !frame?.ez) {
     return {
       kind: "Overbite_anterior",
@@ -951,15 +859,9 @@ export function computeOverbite(landmarks, frame, options = {}) {
 
     ret.used.push(up.key, lw.key);
     used.push(up.key, lw.key);
-
-    // 到局部坐标并投影到正中矢状面
     const upL = projectToMidSagittal(U.toLocal(up.p, frame));
     const lwL = projectToMidSagittal(U.toLocal(lw.p, frame));
-
-    // 关键定义：OB = z_lower - z_upper
     ret.ob_mm = lwL[2] - upL[2];
-
-    // 临床冠高（可选）
     const g = U.pick(landmarks, LwGingivalKeys);
     if (g) {
       ret.used.push(g.key); used.push(g.key);
@@ -968,8 +870,6 @@ export function computeOverbite(landmarks, frame, options = {}) {
     } else {
       ret.missing.push(LwGingivalKeys.join("|"));
     }
-
-    // 常识性预警
     if (Math.abs(ret.ob_mm) > 20) warnings.push("overbite value exceeds 20 mm, please verify landmarks/frame");
     return ret;
   }
@@ -993,14 +893,10 @@ export function computeOverbite(landmarks, frame, options = {}) {
   const side_of_max =
     (haveR && haveL) ? (right.ob_mm >= left.ob_mm ? "right" : "left")
     : (haveR ? "right" : (haveL ? "left" : null));
-
-  // 四舍五入衍生量
   if (right.crown_h_mm != null) right.crown_h_mm = U.round(right.crown_h_mm, dec);
   if (left .crown_h_mm != null) left .crown_h_mm = U.round(left .crown_h_mm, dec);
   if (right.ratio_ob_over_h != null) right.ratio_ob_over_h = U.round(right.ratio_ob_over_h, 3);
   if (left .ratio_ob_over_h != null) left .ratio_ob_over_h = U.round(left .ratio_ob_over_h, 3);
-
-  // 汇总
   return {
     kind: "Overbite_anterior",
     value_mm, side_of_max,
@@ -1012,9 +908,7 @@ export function computeOverbite(landmarks, frame, options = {}) {
     method,
   };
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Module #9 — Overjet_前牙覆盖（正中矢状面，切缘中点→下颌切牙唇面，水平距离）
+// Module #8 — Overjet_前牙覆盖（正中矢状面，切缘中点→下颌切牙唇面，水平距离）
 // 约定：OJ = x_upper - x_lower_labial（在咬合坐标系下、投影至 Y=0）；正=覆盖，负=反𬌗，≈0=对刃
 // 优先使用“下中切牙唇面中点”作为下参考；无则用（切缘中点↔颈部唇侧中点）直线在同高处的线性插值；再无则退化为切缘点。
 // 依赖：frame={origin,ex,ey,ez}（单位向量，右手系），landmarks(单位:mm)
@@ -1023,8 +917,6 @@ export function computeOverjet(landmarks, frame, options = {}) {
   const dec = options.dec ?? 2;
   const deep_mm = options.deep_mm ?? 12;       // 深覆盖阈值（可配置）
   const edge_eps = options.edge_eps ?? 0.2;    // 对刃判定（|OJ|≤edge_eps）
-
-  // 允许外部传 utils；否则提供最小实现
   const U = options.utils ?? {
     dot: (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2],
     sub: (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]],
@@ -1045,15 +937,10 @@ export function computeOverjet(landmarks, frame, options = {}) {
   };
 
   const sel = {
-    // 上颌中切牙（切缘中点）
     U_right: options.selectors?.U_right ?? ["11m"],
     U_left : options.selectors?.U_left  ?? ["21m"],
-
-    // 下颌中切牙：唇面“代表点”（优先）
     L_labial_right: options.selectors?.L_labial_right ?? [],
     L_labial_left : options.selectors?.L_labial_left  ?? [],
-
-    // 退化路径所需：切缘 & 颈部唇侧中点（用于拟合唇面方向线）
     L_incisal_right: options.selectors?.L_incisal_right ?? ["41m"],
     L_incisal_left : options.selectors?.L_incisal_left  ?? ["31m"],
     L_cervical_right: options.selectors?.L_cervical_right ?? ["41bgb"],
@@ -1098,8 +985,6 @@ export function computeOverjet(landmarks, frame, options = {}) {
 
     const upL = projectToMidSagittal(U.toLocal(up.p, frame));
     ret.x_upper = upL[0];
-
-    // 1) 直接用唇面代表点
     const ll = U.pick(landmarks, L_labialKeys);
     if (ll) {
       ret.used.push(ll.key); used.push(ll.key);
@@ -1107,7 +992,6 @@ export function computeOverjet(landmarks, frame, options = {}) {
       ret.x_lower_labial = llL[0];
       ret.labial_source = "labial_landmark";
     } else {
-      // 2) 用切缘与颈部唇侧中点拟合一条矢状线，并在与上切缘同高（同 z）处取线性插值
       const li = U.pick(landmarks, L_incisalKeys);
       const lc = U.pick(landmarks, L_cervicalKeys);
       if (li && lc) {
@@ -1116,7 +1000,6 @@ export function computeOverjet(landmarks, frame, options = {}) {
         const lcL = projectToMidSagittal(U.toLocal(lc.p, frame));
         const dz = lcL[2] - liL[2];
         if (Math.abs(dz) < 1e-6) {
-          // 基本平行于 X：直接取切缘点的 x 作为近似
           ret.x_lower_labial = liL[0];
           ret.labial_source = "incisal_only";
           warnings.push("lower labial line dz≈0; fell back to incisal_only");
@@ -1135,16 +1018,10 @@ export function computeOverjet(landmarks, frame, options = {}) {
         return ret;
       }
     }
-
-    // OJ = x_upper - x_lower_labial
     ret.oj_mm = ret.x_upper - ret.x_lower_labial;
-
-    // 标记
     ret.flags.edge_to_edge = Math.abs(ret.oj_mm) <= edge_eps;
     ret.flags.reverse = ret.oj_mm < -edge_eps;
     ret.flags.deep = ret.oj_mm >= deep_mm;
-
-    // 常识性预警
     if (Math.abs(ret.oj_mm) > 20) warnings.push("overjet value exceeds 20 mm, please verify landmarks/frame");
     return ret;
   }
@@ -1172,8 +1049,6 @@ export function computeOverjet(landmarks, frame, options = {}) {
   const side_of_max =
     (haveR && haveL) ? (right.oj_mm >= left.oj_mm ? "right" : "left")
     : (haveR ? "right" : (haveL ? "left" : null));
-
-  // 四舍五入派生量
   if (right.x_upper != null) right.x_upper = U.round(right.x_upper, dec);
   if (left .x_upper != null) left .x_upper = U.round(left .x_upper, dec);
   if (right.x_lower_labial != null) right.x_lower_labial = U.round(right.x_lower_labial, dec);
@@ -1192,7 +1067,7 @@ export function computeOverjet(landmarks, frame, options = {}) {
   };
 }
 // ─────────────────────────────────────────────────────────────────────────────
-// Module #10 — Arch_Width_牙弓宽度（前/中/后段）
+// Module #9 — Arch_Width_牙弓宽度（前/中/后段）
 // 说明：在咬合坐标系的咬合平面(XY)上测量双侧对应点的“横向距离”
 // 主值：transverse_mm = |y_L - y_R|；同时返回 euclid_mm = √(Δx²+Δy²)
 // 依赖：frame={origin,ex,ey,ez}；landmarks 单位 mm；arch='upper'|'lower'
@@ -1223,8 +1098,6 @@ export function computeArchWidth(landmarks, frame, options = {}) {
   if (!frame?.origin || !frame?.ex || !frame?.ey || !frame?.ez) {
     return { kind:"Arch_Width", arch, quality:"missing", used:[], warnings:["missing frame"], method:{} };
   }
-
-  // —— 牙位候选（按优先顺序）——
   const SEL = (arch === "upper")
     ? {
         canine_L : [["23m"]],
@@ -1275,7 +1148,6 @@ export function computeArchWidth(landmarks, frame, options = {}) {
     info.source.left = L.key; info.source.right = R.key;
 
     const Ll = U.toLocal(L.p, frame); const Rl = U.toLocal(R.p, frame);
-    // 投影到XY（忽略Z）
     const Lxy = [Ll[0], Ll[1]]; const Rxy = [Rl[0], Rl[1]];
     info.points = { L_xy: [U.round(Lxy[0],dec), U.round(Lxy[1],dec)], R_xy: [U.round(Rxy[0],dec), U.round(Rxy[1],dec)] };
 
@@ -1320,7 +1192,7 @@ export function computeArchWidth(landmarks, frame, options = {}) {
   };
 }
 // ─────────────────────────────────────────────────────────────────────────────
-// Module #11 — Arch_Form_牙弓形态（曲线拟合 + 指标 + 三分类）
+// Module #10 — Arch_Form_牙弓形态（曲线拟合 + 指标 + 三分类）
 // 说明：在咬合平面(XY)收集“唇/颊外缘”点 → 排序成单调开曲线 → 采样成 polyline
 // 指标：r_ic=ICW/IMW，r_ip1=IP1W/IMW，d_ant=前缘到M1连线的距/IMW，kappa_front≈前三点曲率
 // 分类（启发式，后续可用数据再调）：Tapered (r_ic≤0.72) / Square (r_ic≥0.80) / Ovoid (else)
@@ -1351,8 +1223,6 @@ export function computeArchForm(landmarks, frame, options = {}) {
   if (!frame?.origin || !frame?.ex || !frame?.ey || !frame?.ez) {
     return { kind:"Arch_Form", arch, quality:"missing", used:[], warnings:["missing frame"], method:{} };
   }
-
-  // —— 外缘点位集合（可按需扩充）——
   const SEL = (arch === "upper")
     ? {
         incisors: [["11m"], ["12m"], ["21m"], ["22m"]],
@@ -1411,8 +1281,6 @@ export function computeArchForm(landmarks, frame, options = {}) {
   const pts_can = takeAll(SEL.canines);
   const pts_R   = takeAll(SEL.post_R);
   const pts_L   = takeAll(SEL.post_L);
-
-  // —— 排序：以 x（前后）为主序 —— //
   const rightSorted = pts_R.sort((a,b)=>a.xy[0]-b.xy[0]);     // 后→前（小x到大x）
   const leftSorted  = pts_L.sort((a,b)=>b.xy[0]-a.xy[0]);     // 前→后（大x到小x）
   const incSorted   = pts_inc.sort((a,b)=>a.xy[0]-b.xy[0]);   // 左右顺序不重要
@@ -1421,8 +1289,6 @@ export function computeArchForm(landmarks, frame, options = {}) {
   const haveMin = (pts_can.length>=1) && (pts_R.length>=1) && (pts_L.length>=1) && (pts_inc.length>=2);
   let quality = haveMin ? "ok" : (ordered.length>=4 ? "fallback" : "missing");
   if (!haveMin) warnings.push("insufficient key points for reliable arch curve; classification confidence reduced");
-
-  // —— 线性重采样为 sample_n 个点（按弧长比例） —— //
   function resamplePolyline(points, N){
     if (points.length===0) return [];
     if (points.length===1) return Array(N).fill(points[0]);
@@ -1438,7 +1304,6 @@ export function computeArchForm(landmarks, frame, options = {}) {
     const out=[];
     for (let k=0;k<N;k++){
       const t = (k/(N-1))*total;
-      // 找到段
       let i=0; while (i<cum.length-1 && cum[i+1]<t) i++;
       const t0=cum[i], t1=cum[i+1], loc = (t1===t0?0:(t-t0)/(t1-t0));
       const x = U.lerp(xs[i], xs[i+1], loc);
@@ -1448,8 +1313,6 @@ export function computeArchForm(landmarks, frame, options = {}) {
     return out;
   }
   const curve_xy = resamplePolyline(ordered, sample_n);
-
-  // —— 指标：ICW/IP1W/IMW、前缘深度、前缘曲率近似 —— //
   function getWidthFromPair(selL, selR){
     const L = U.pick(landmarks, selL[0]) || (selL[1] && U.pick(landmarks, selL[1]));
     const R = U.pick(landmarks, selR[0]) || (selR[1] && U.pick(landmarks, selR[1]));
@@ -1457,8 +1320,6 @@ export function computeArchForm(landmarks, frame, options = {}) {
     const Ll = U.toLocal(L.p, frame), Rl = U.toLocal(R.p, frame);
     return Math.abs(Rl[1]-Ll[1]); // transverse
   }
-
-  // 若有预计算宽度则复用，否则局部计算
   let ICW=null, IP1W=null, IMW=null;
   if (preWidth?.kind==="Arch_Width" && preWidth.arch===arch){
     ICW = preWidth.canine_mm ?? null;
@@ -1467,7 +1328,6 @@ export function computeArchForm(landmarks, frame, options = {}) {
   } else {
     ICW = getWidthFromPair(SEL.C_L, SEL.C_R);
     IP1W = getWidthFromPair(SEL.P1_L, SEL.P1_R);
-    // M1：允许 MB→DB/BC 回退
     const tryM1 = (SEL.M1_L[0] && SEL.M1_R[0]) ? getWidthFromPair(SEL.M1_L, SEL.M1_R) : null;
     IMW = tryM1;
   }
@@ -1479,15 +1339,11 @@ export function computeArchForm(landmarks, frame, options = {}) {
   } else {
     warnings.push("IMW not available; ratios unavailable");
   }
-
-  // 前缘点 = 曲线 x 最大的点；M1 连线用于深度基线
   function lineDistPoint(Lpt, Rpt, P){
-    // 距离点到直线（通过 Lpt,Rpt）
     const [x1,y1]=Lpt, [x2,y2]=Rpt, [x0,y0]=P;
     const A=y1-y2, B=x2-x1, C=x1*y2-x2*y1;
     return Math.abs(A*x0 + B*y0 + C) / Math.hypot(A,B);
   }
-  // 取 M1 左右点（若缺失，则用曲线两端作为近似）
   let M1L=null, M1R=null;
   {
     const pickL = U.pick(landmarks, SEL.M1_L[0]) || (SEL.M1_L[1] && U.pick(landmarks, SEL.M1_L[1])) || (SEL.M1_L[2] && U.pick(landmarks, SEL.M1_L[2]));
@@ -1507,8 +1363,6 @@ export function computeArchForm(landmarks, frame, options = {}) {
     d_ant = lineDistPoint(M1L, M1R, P_ant);
     if (IMW && IMW>0) d_ant_ratio = U.round(d_ant/IMW, 3);
   }
-
-  // 前缘曲率近似：取前端附近 3 个采样点（不足则 null）
   function curvature3(p0,p1,p2){
     const [x1,y1]=p0,[x2,y2]=p1,[x3,y3]=p2;
     const a=Math.hypot(x1-x2,y1-y2), b=Math.hypot(x2-x3,y2-y3), c=Math.hypot(x3-x1,y3-y1);
@@ -1521,8 +1375,6 @@ export function computeArchForm(landmarks, frame, options = {}) {
     const i = Math.max(1, Math.min(anteriorIdx, curve_xy.length-3));
     kappa_front = U.round(curvature3(curve_xy[i-1], curve_xy[i], curve_xy[i+1]), 4);
   }
-
-  // —— 三分类（启发式，可日后替换为模板最小残差） —— //
   let klass = null;
   if (r_ic != null){
     if (r_ic <= 0.72) klass = "Tapered";
@@ -1556,7 +1408,7 @@ export function computeArchForm(landmarks, frame, options = {}) {
   };
 }
 // ─────────────────────────────────────────────────────────────────────────────
-// Module #12 — Canine_Relationship_尖牙关系（无真值，三档代理）
+// Module #11 — Canine_Relationship_尖牙关系（无真值，三档代理）
 // 定义：比较 上颌尖牙牙尖 U3c 与 下颌“DMR 代理点”的前后(AP, x轴)差：dx = x(U3c) - x(DMR_proxy)
 // 分类：|dx|<=eps → 中性；dx>eps → 近中；dx<-eps → 远中
 // 代理顺序：arch_curve 分位(α) > 直线分位(α) > 固定后移(β或0.02×IMW)
@@ -1592,8 +1444,6 @@ export function computeCanineRelationship(landmarks, frame, options = {}) {
   if (!frame?.origin || !frame?.ex || !frame?.ey || !frame?.ez) {
     return { kind:"Canine_Relationship", quality:"missing", used:[], warnings:["missing frame"], method:{} };
   }
-
-  // —— 最小 selector（可按你字典增补别名）——
   const SEL = {
     U_R_cusp: ["13m"],
     U_L_cusp: ["23m"],
@@ -1610,8 +1460,6 @@ export function computeCanineRelationship(landmarks, frame, options = {}) {
     proxy_order: "arch_curve_fraction > segment_fraction > fixed_offset",
     params: { alpha, eps, beta_mm, use_imw_scale, dec },
   };
-
-  // —— 工具：在 polyline 上找最近点索引 —— //
   function nearestIdx(poly, pt){
     let best=0, bestD=Infinity;
     for (let i=0;i<poly.length;i++){
@@ -1620,8 +1468,6 @@ export function computeCanineRelationship(landmarks, frame, options = {}) {
     }
     return best;
   }
-
-  // 沿折线从 i0→i1 的弧长分位 (0..1)，返回插值点
   function arcFractionPoint(poly, i0, i1, frac){
     if (!poly?.length) return null;
     if (i0===i1) return poly[i0];
@@ -1664,8 +1510,6 @@ export function computeCanineRelationship(landmarks, frame, options = {}) {
     out.points.L3c = [U.round(L3xy[0],dec), U.round(L3xy[1],dec)];
 
     let DMRxy = null; let src = null;
-
-    // 档 1：弧长分位（需曲线 & L4）
     const L4 = U.pick(landmarks, Lp1Keys);
     if (archCurve && L4){
       used.push(L4.key); out.used.push(L4.key);
@@ -1677,16 +1521,12 @@ export function computeCanineRelationship(landmarks, frame, options = {}) {
       const P = arcFractionPoint(archCurve, i0, i1, alpha);
       if (P){ DMRxy = P; src = "arch_curve_fraction"; }
     }
-
-    // 档 2：直线分位
     if (!DMRxy && L4){
       const L4loc = U.toLocal(L4.p, frame); const L4xy = [L4loc[0], L4loc[1]];
       const dx = L4xy[0]-L3xy[0], dy = L4xy[1]-L3xy[1];
       DMRxy = [ L3xy[0] + alpha*dx, L3xy[1] + alpha*dy ];
       src = "segment_fraction";
     }
-
-    // 档 3：固定后移
     if (!DMRxy){
       let beta = beta_mm;
       const imw = (preWidth?.kind==="Arch_Width" && preWidth.arch==="lower") ? preWidth.molar1_mm : null;
@@ -1698,8 +1538,6 @@ export function computeCanineRelationship(landmarks, frame, options = {}) {
 
     out.points.DMR_proxy = [U.round(DMRxy[0],dec), U.round(DMRxy[1],dec)];
     out.source = src;
-
-    // 判别
     const dx = Uxy[0] - DMRxy[0];
     out.dx_mm = U.round(dx, dec);
     if (Math.abs(dx) <= eps) out.class = "中性关系";
